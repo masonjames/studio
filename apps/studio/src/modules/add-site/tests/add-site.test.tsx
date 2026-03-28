@@ -47,6 +47,30 @@ const mockGenerateProposedSitePath =
 	vi.fn< ( siteName: string ) => Promise< FolderDialogResponse > >();
 const mockGetAllCustomDomains = vi.fn< () => Promise< string[] > >().mockResolvedValue( [] );
 const mockSetSelectedTab = vi.fn();
+const mockExternalRemoteSite = {
+	id: 'mainwpBridge:site-123',
+	remoteSiteId: 'site-123',
+	provider: 'mainwpBridge',
+	providerLabel: 'MainWP / Bridge',
+	providerAccountId: 'account-123',
+	localSiteId: '',
+	name: 'Avenue941.com',
+	url: 'https://avenue941.com',
+	isStaging: false,
+	isPressable: false,
+	environmentType: null,
+	syncSupport: 'syncable',
+	capabilities: {
+		pull: true,
+		push: false,
+		backupCreate: true,
+		backupsRead: true,
+		importCreate: true,
+		restoreCreate: true,
+	},
+	lastPullTimestamp: null,
+	lastPushTimestamp: null,
+};
 
 vi.mock( 'src/lib/get-ipc-api', () => ( {
 	__esModule: true,
@@ -76,6 +100,25 @@ vi.mock( 'src/hooks/use-content-tabs', () => ( {
 		setSelectedTab: mockSetSelectedTab,
 		tabs: [],
 	} ),
+} ) );
+
+vi.mock( 'src/modules/sync/providers/mainwp-bridge/site-selector', () => ( {
+	__esModule: true,
+	default: ( {
+		selectedRemoteSite,
+		setSelectedRemoteSite,
+	}: {
+		selectedRemoteSite?: typeof mockExternalRemoteSite;
+		setSelectedRemoteSite: ( site?: typeof mockExternalRemoteSite ) => void;
+	} ) => (
+		<div>
+			<div>MainWP provider site selector</div>
+			<button type="button" onClick={ () => setSelectedRemoteSite( mockExternalRemoteSite ) }>
+				Select mocked MainWP site
+			</button>
+			{ selectedRemoteSite?.name && <div>{ selectedRemoteSite.name }</div> }
+		</div>
+	),
 } ) );
 
 const mockCreateSite = vi.fn< ( path: string, name?: string, wpVersion?: string ) => void >();
@@ -615,6 +658,34 @@ describe( 'AddSite', () => {
 		// Warning indicator should show next to Advanced settings
 		await waitFor( () => {
 			expect( screen.getByText( '2 warnings found' ) ).toBeInTheDocument();
+		} );
+	} );
+
+	it( 'navigates through the external provider pull flow and prefills the site name', async () => {
+		const user = userEvent.setup();
+		renderWithProvider( <AddSite /> );
+
+		await user.click( screen.getByRole( 'button', { name: 'Add site' } ) );
+		await user.click( screen.getByRole( 'button', { name: /Pull from another host/i } ) );
+
+		expect( screen.getByRole( 'heading', { name: 'Choose a hosting provider' } ) ).toBeVisible();
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
+
+		await user.click( screen.getByRole( 'button', { name: /MainWP/i } ) );
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
+
+		await user.click( screen.getByTestId( 'stepper-action-button' ) );
+		expect( screen.getByText( 'MainWP provider site selector' ) ).toBeVisible();
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
+
+		await user.click( screen.getByRole( 'button', { name: 'Select mocked MainWP site' } ) );
+		expect( screen.getByText( 'Avenue941.com' ) ).toBeVisible();
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
+
+		await user.click( screen.getByTestId( 'stepper-action-button' ) );
+
+		await waitFor( () => {
+			expect( screen.getByTestId( 'site-name-input' ) ).toHaveValue( 'Avenue941.com' );
 		} );
 	} );
 

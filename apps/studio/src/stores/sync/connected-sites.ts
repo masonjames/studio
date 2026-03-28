@@ -7,9 +7,9 @@ import type { SyncSite, SyncModalMode } from 'src/modules/sync/types';
 type ConnectedSitesState = {
 	isModalOpen: boolean;
 	modalMode: SyncModalMode | null;
-	selectedRemoteSiteId: number | null;
+	selectedRemoteSiteId: string | null;
 	selectedLocalSiteId: string | null;
-	loadingSiteIds: Record< number, boolean >;
+	loadingSiteIds: Record< string, boolean >;
 };
 
 function getInitialState(): ConnectedSitesState {
@@ -41,7 +41,7 @@ const connectedSitesSlice = createSlice( {
 
 		setSelectedRemoteSiteId: (
 			state,
-			action: PayloadAction< { remoteSiteId: number; localSiteId: string } >
+			action: PayloadAction< { remoteSiteId: string; localSiteId: string } >
 		) => {
 			state.selectedRemoteSiteId = action.payload.remoteSiteId;
 			state.selectedLocalSiteId = action.payload.localSiteId;
@@ -52,11 +52,11 @@ const connectedSitesSlice = createSlice( {
 			state.selectedLocalSiteId = null;
 		},
 
-		addLoadingSiteId: ( state, action: PayloadAction< number > ) => {
+		addLoadingSiteId: ( state, action: PayloadAction< string > ) => {
 			state.loadingSiteIds[ action.payload ] = true;
 		},
 
-		removeLoadingSiteId: ( state, action: PayloadAction< number > ) => {
+		removeLoadingSiteId: ( state, action: PayloadAction< string > ) => {
 			delete state.loadingSiteIds[ action.payload ];
 		},
 	},
@@ -69,7 +69,7 @@ export const connectedSitesSelectors = {
 	selectModalMode: ( state: RootState ) => state.connectedSites.modalMode,
 	selectSelectedRemoteSiteId: ( state: RootState ) => state.connectedSites.selectedRemoteSiteId,
 	selectSelectedLocalSiteId: ( state: RootState ) => state.connectedSites.selectedLocalSiteId,
-	selectIsLoadingSiteId: ( id: number ) => ( state: RootState ) =>
+	selectIsLoadingSiteId: ( id: string ) => ( state: RootState ) =>
 		Boolean( state.connectedSites.loadingSiteIds[ id ] ),
 };
 
@@ -87,7 +87,7 @@ export const connectedSitesApi = createApi( {
 					return { data: [] };
 				}
 
-				const sites = await getIpcApi().getConnectedWpcomSites( localSiteId );
+				const sites = await getIpcApi().getConnectedRemoteSites( localSiteId );
 				return { data: sites };
 			},
 			providesTags: ( result, error, arg ) => [
@@ -97,14 +97,14 @@ export const connectedSitesApi = createApi( {
 
 		connectSite: builder.mutation< SyncSite[], { site: SyncSite; localSiteId: string } >( {
 			queryFn: async ( { site, localSiteId } ) => {
-				await getIpcApi().connectWpcomSites( [
+				await getIpcApi().connectRemoteSites( [
 					{
 						sites: [ site ],
 						localSiteId,
 					},
 				] );
 
-				const actualConnectedSites = await getIpcApi().getConnectedWpcomSites( localSiteId );
+				const actualConnectedSites = await getIpcApi().getConnectedRemoteSites( localSiteId );
 
 				return { data: actualConnectedSites };
 			},
@@ -113,16 +113,16 @@ export const connectedSitesApi = createApi( {
 			],
 		} ),
 
-		disconnectSite: builder.mutation< SyncSite[], { siteId: number; localSiteId: string } >( {
+		disconnectSite: builder.mutation< SyncSite[], { siteId: string; localSiteId: string } >( {
 			queryFn: async ( { siteId, localSiteId } ) => {
-				await getIpcApi().disconnectWpcomSites( [
+				await getIpcApi().disconnectRemoteSites( [
 					{
 						siteIds: [ siteId ],
 						localSiteId,
 					},
 				] );
 
-				const actualConnectedSites = await getIpcApi().getConnectedWpcomSites( localSiteId );
+				const actualConnectedSites = await getIpcApi().getConnectedRemoteSites( localSiteId );
 
 				return { data: actualConnectedSites };
 			},

@@ -27,7 +27,11 @@ import {
 	useGetConnectedSitesForLocalSiteQuery,
 } from 'src/stores/sync/connected-sites';
 import { useGetWpComSitesQuery } from 'src/stores/sync/wpcom-sites';
-import type { SyncSite } from 'src/modules/sync/types';
+import {
+	getWpcomNumericSiteId,
+	isWpcomSyncSite,
+	type SyncSite,
+} from 'src/modules/sync/types';
 
 function SiteSyncDescription( { children }: PropsWithChildren ) {
 	const { __ } = useI18n();
@@ -130,7 +134,7 @@ export function ContentTabSync( { selectedSite }: { selectedSite: SiteDetails } 
 		connectedSitesSelectors.selectSelectedRemoteSiteId
 	);
 	const selectedLocalSiteId = useRootSelector( connectedSitesSelectors.selectSelectedLocalSiteId );
-	const { isAuthenticated, user, client } = useAuth();
+	const { isAuthenticated, user } = useAuth();
 	const { data: connectedSites = [], isLoading: isLoadingConnectedSites } =
 		useGetConnectedSitesForLocalSiteQuery( {
 			localSiteId: selectedSite.id,
@@ -139,11 +143,17 @@ export function ContentTabSync( { selectedSite }: { selectedSite: SiteDetails } 
 	const [ connectSite ] = useConnectSiteMutation();
 	const [ disconnectSite ] = useDisconnectSiteMutation();
 
-	const connectedSiteIds = connectedSites.map( ( { id } ) => id );
-	const { data: syncSites = [] } = useGetWpComSitesQuery( {
-		connectedSiteIds,
-		userId: user?.id,
-	} );
+	const connectedSiteIds = connectedSites
+		.filter( isWpcomSyncSite )
+		.map( ( site ) => getWpcomNumericSiteId( site ) )
+		.filter( ( id ): id is number => typeof id === 'number' );
+	const { data: syncSites = [] } = useGetWpComSitesQuery(
+		{
+			connectedSiteIds,
+			userId: user?.id,
+		},
+		{ skip: ! isAuthenticated }
+	);
 
 	const [ selectedRemoteSite, setSelectedRemoteSite ] = useState< SyncSite | null >( null );
 
@@ -159,7 +169,7 @@ export function ContentTabSync( { selectedSite }: { selectedSite: SiteDetails } 
 
 	const effectiveRemoteSite = deepLinkRemoteSite || selectedRemoteSite;
 
-	if ( ! isAuthenticated ) {
+	if ( ! isAuthenticated && ! isLoadingConnectedSites && connectedSites.length === 0 ) {
 		return <NoAuthSyncTab />;
 	}
 
@@ -174,7 +184,7 @@ export function ContentTabSync( { selectedSite }: { selectedSite: SiteDetails } 
 		}
 	};
 
-	const handleSiteSelection = async ( siteId: number ) => {
+	const handleSiteSelection = async ( siteId: string ) => {
 		const selectedSiteFromList = syncSites.find( ( site ) => site.id === siteId );
 		if ( ! selectedSiteFromList ) {
 			getIpcApi().showErrorMessageBox( {
@@ -204,14 +214,16 @@ export function ContentTabSync( { selectedSite }: { selectedSite: SiteDetails } 
 							disconnectSite( { siteId: id, localSiteId: selectedSite.id } )
 						}
 					/>
-					<div className="sticky bottom-0 bg-frame/[0.8] backdrop-blur-sm w-full px-8 py-6 mt-auto">
-						<ConnectButton
-							variant="primary"
-							connectSite={ () => dispatch( connectedSitesActions.openModal( 'connect' ) ) }
-						>
-							{ __( 'Connect another site' ) }
-						</ConnectButton>
-					</div>
+					{ isAuthenticated && (
+						<div className="sticky bottom-0 bg-frame/[0.8] backdrop-blur-sm w-full px-8 py-6 mt-auto">
+							<ConnectButton
+								variant="primary"
+								connectSite={ () => dispatch( connectedSitesActions.openModal( 'connect' ) ) }
+							>
+								{ __( 'Connect another site' ) }
+							</ConnectButton>
+						</div>
+					) }
 				</div>
 			) : isLoadingConnectedSites ? null : (
 				<SiteSyncDescription>
@@ -232,7 +244,7 @@ export function ContentTabSync( { selectedSite }: { selectedSite: SiteDetails } 
 					onRequestClose={ () => {
 						dispatch( connectedSitesActions.closeModal() );
 					} }
-					onConnect={ async ( siteId: number ) => {
+					onConnect={ async ( siteId: string ) => {
 						await handleSiteSelection( siteId );
 					} }
 					selectedSite={ selectedSite }
@@ -246,6 +258,15 @@ export function ContentTabSync( { selectedSite }: { selectedSite: SiteDetails } 
 						localSite={ selectedSite }
 						remoteSite={ effectiveRemoteSite }
 						onPush={ async ( tree ) => {
+							if ( ! effectiveRemoteSite.capabilities.push ) {
+								getIpcApi().showErrorMessageBox( {
+									title: __( 'Push is not available yet' ),
+									message: __(
+										'This provider currently supports pull only. Push support will be added in a follow-up update.'
+									),
+								} );
+								return;
+							}
 							await handleConnect( effectiveRemoteSite );
 							const pushOptions = convertTreeToPushOptions( tree );
 							void dispatch(
@@ -257,14 +278,10 @@ export function ContentTabSync( { selectedSite }: { selectedSite: SiteDetails } 
 							);
 						} }
 						onPull={ async ( tree ) => {
-							if ( ! client ) {
-								return;
-							}
 							await handleConnect( effectiveRemoteSite );
 							const pullOptions = convertTreeToPullOptions( tree );
 							void dispatch(
 								syncOperationsThunks.pullSite( {
-									client,
 									connectedSite: effectiveRemoteSite,
 									selectedSite,
 									options: pullOptions,

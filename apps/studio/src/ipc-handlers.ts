@@ -120,15 +120,19 @@ export {
 	addSyncOperation,
 	cancelSyncOperation,
 	clearSyncOperation,
+	connectRemoteSites,
 	connectWpcomSites,
+	disconnectRemoteSites,
 	disconnectWpcomSites,
 	downloadSyncBackup,
 	exportSiteForPush,
+	getConnectedRemoteSites,
 	getConnectedWpcomSites,
 	pauseSyncUpload,
 	pushArchive,
 	removeSyncBackup,
 	resumeSyncUpload,
+	updateConnectedRemoteSites,
 	updateConnectedWpcomSites,
 } from 'src/modules/sync/lib/ipc-handlers';
 
@@ -140,6 +144,17 @@ export {
 	setSnapshot,
 	updateSnapshot,
 } from 'src/modules/preview-site/lib/ipc-handlers';
+
+export {
+	deleteRemoteProviderAccount,
+	downloadRemotePullArtifact,
+	listRemoteProviderAccounts,
+	listRemoteProviderSites,
+	pollRemotePull,
+	startRemotePull,
+	testRemoteProviderAccount,
+	upsertRemoteProviderAccount,
+} from 'src/modules/sync/providers/ipc-handlers';
 
 export {
 	getColorScheme,

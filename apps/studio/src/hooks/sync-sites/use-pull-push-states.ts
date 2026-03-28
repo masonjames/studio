@@ -1,16 +1,16 @@
 import { useCallback, useRef, useEffect } from 'react';
 
-export const generateStateId = ( selectedSiteId: string, remoteSiteId: number ) =>
+export const generateStateId = ( selectedSiteId: string, remoteSiteId: string ) =>
 	`${ selectedSiteId }-${ remoteSiteId }`;
 
 export type States< T > = Record< string, T >;
 export type UpdateState< T > = (
 	selectedSiteId: string,
-	remoteSiteId: number,
+	remoteSiteId: string,
 	state: Partial< T >
 ) => void;
-export type GetState< T > = ( selectedSiteId: string, remoteSiteId: number ) => T | undefined;
-export type ClearState = ( selectedSiteId: string, remoteSiteId: number ) => void;
+export type GetState< T > = ( selectedSiteId: string, remoteSiteId: string ) => T | undefined;
+export type ClearState = ( selectedSiteId: string, remoteSiteId: string ) => void;
 
 type UsePullPushStates< T > = {
 	updateState: UpdateState< T >;

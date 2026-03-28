@@ -8,7 +8,76 @@ import { getAppConfigLockFilePath } from '@studio/common/lib/well-known-paths';
 import { readFile, writeFile } from 'atomically';
 import { sanitizeUnstructuredData, sanitizeUserpath } from 'src/lib/sanitize-for-logging';
 import { getUserDataFilePath } from 'src/storage/paths';
+import {
+	buildRemoteSiteKey,
+	type SyncSite,
+} from 'src/modules/sync/types';
 import { EMPTY_USER_DATA, type UserData, type WindowBounds } from 'src/storage/storage-types';
+
+function getDefaultCapabilities(): SyncSite['capabilities'] {
+	return {
+		pull: true,
+		push: true,
+		backupCreate: true,
+		backupsRead: true,
+		importCreate: true,
+		restoreCreate: true,
+	};
+}
+
+function normalizeLegacyWpcomSite( site: any, userId: number ): SyncSite {
+	const remoteSiteId = String( site?.legacyNumericId ?? site?.remoteSiteId ?? site?.id ?? '' );
+	const syncSupport = site?.syncSupport ?? 'already-connected';
+
+	return {
+		id: buildRemoteSiteKey( 'wpcom', remoteSiteId ),
+		remoteSiteId,
+		provider: 'wpcom',
+		providerLabel: site?.providerLabel ?? 'WordPress.com',
+		legacyNumericId:
+			typeof site?.legacyNumericId === 'number'
+				? site.legacyNumericId
+				: Number.parseInt( remoteSiteId, 10 ),
+		wpcomUserId: site?.wpcomUserId ?? userId,
+		localSiteId: site?.localSiteId ?? '',
+		name: site?.name ?? '',
+		url: site?.url ?? '',
+		isStaging: Boolean( site?.isStaging ),
+		isPressable: Boolean( site?.isPressable ),
+		environmentType: site?.environmentType ?? null,
+		syncSupport,
+		capabilities: site?.capabilities ?? getDefaultCapabilities(),
+		lastPullTimestamp: site?.lastPullTimestamp ?? null,
+		lastPushTimestamp: site?.lastPushTimestamp ?? null,
+	};
+}
+
+function normalizeUserData( parsed: any ): UserData {
+	const { siteMetadata, connectedRemoteSites, connectedWpcomSites, remoteProviderAccounts, ...data } =
+		parsed ?? {};
+
+	const canonicalConnectedSites = Array.isArray( connectedRemoteSites )
+		? connectedRemoteSites
+		: Object.entries( connectedWpcomSites ?? {} ).flatMap( ( [ rawUserId, sites ] ) => {
+			const userId = Number.parseInt( rawUserId, 10 );
+			if ( ! Array.isArray( sites ) ) {
+				return [];
+			}
+			return sites.map( ( site ) => normalizeLegacyWpcomSite( site, userId ) );
+		} );
+
+	return {
+		...EMPTY_USER_DATA,
+		...data,
+		version: 2,
+		siteMetadata: siteMetadata ?? {},
+		connectedRemoteSites: canonicalConnectedSites,
+		connectedWpcomSites,
+		remoteProviderAccounts: Array.isArray( remoteProviderAccounts )
+			? remoteProviderAccounts
+			: [],
+		};
+}
 
 export async function loadUserData(): Promise< UserData > {
 	const filePath = getUserDataFilePath();
@@ -17,8 +86,7 @@ export async function loadUserData(): Promise< UserData > {
 		const asString = await readFile( filePath, 'utf-8' );
 		try {
 			const parsed = JSON.parse( asString );
-			const { siteMetadata, ...data } = parsed;
-			return { ...data, version: 1, siteMetadata: siteMetadata ?? {} };
+			return normalizeUserData( parsed );
 		} catch ( err ) {
 			if ( err instanceof SyntaxError ) {
 				Sentry.addBreadcrumb( {

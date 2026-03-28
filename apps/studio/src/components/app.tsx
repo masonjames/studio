@@ -41,7 +41,7 @@ export default function App() {
 	// Initialize sync states from in-progress server operations
 	useEffect( () => {
 		if ( client ) {
-			void dispatch( syncOperationsThunks.initializeSyncStates( { client } ) );
+			void dispatch( syncOperationsThunks.initializeSyncStates() );
 		}
 	}, [ client, dispatch ] );
 

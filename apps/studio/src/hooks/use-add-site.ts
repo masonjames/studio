@@ -6,7 +6,6 @@ import { generateCustomDomainFromSiteName } from '@studio/common/lib/domains';
 import { SupportedPHPVersion } from '@studio/common/types/php-versions';
 import { useI18n } from '@wordpress/react-i18n';
 import { useCallback, useMemo, useState } from 'react';
-import { useAuth } from 'src/hooks/use-auth';
 import { useContentTabs } from 'src/hooks/use-content-tabs';
 import { useImportExport } from 'src/hooks/use-import-export';
 import { useSiteDetails } from 'src/hooks/use-site-details';
@@ -16,7 +15,7 @@ import { syncOperationsThunks } from 'src/stores/sync';
 import { useConnectSiteMutation } from 'src/stores/sync/connected-sites';
 import { Blueprint } from 'src/stores/wpcom-api';
 import type { BlueprintPreferredVersions } from '@studio/common/lib/blueprint-validation';
-import type { SyncSite } from 'src/modules/sync/types';
+import type { RemoteProvider, SyncSite } from 'src/modules/sync/types';
 import type { SyncOption } from 'src/types';
 
 /**
@@ -51,11 +50,11 @@ export function useAddSite() {
 	const { createSite, sites } = useSiteDetails();
 	const { importFile, clearImportState, importState } = useImportExport();
 	const [ connectSite ] = useConnectSiteMutation();
-	const { client } = useAuth();
 	const dispatch = useAppDispatch();
 	const { setSelectedTab } = useContentTabs();
 	const [ fileForImport, setFileForImport ] = useState< File | null >( null );
 	const [ selectedBlueprint, setSelectedBlueprint ] = useState< Blueprint | undefined >();
+	const [ selectedRemoteProvider, setSelectedRemoteProvider ] = useState< RemoteProvider | undefined >();
 	const [ selectedRemoteSite, setSelectedRemoteSite ] = useState< SyncSite | undefined >();
 	const [ blueprintPreferredVersions, setBlueprintPreferredVersions ] = useState<
 		BlueprintPreferredVersions | undefined
@@ -104,6 +103,7 @@ export function useAddSite() {
 		setBlueprintSuggestedHttps( undefined );
 		setBlueprintSuggestedSiteName( undefined );
 		setBlueprintRequiresCustomDomain( false );
+		setSelectedRemoteProvider( undefined );
 		setSelectedRemoteSite( undefined );
 		setDeeplinkPhpVersion( DEFAULT_PHP_VERSION );
 		setDeeplinkWpVersion( DEFAULT_WORDPRESS_VERSION );
@@ -278,12 +278,11 @@ export function useAddSite() {
 								title: newSite.name,
 								body: __( 'Your new site was imported' ),
 							} );
-						} else if ( selectedRemoteSite && client ) {
+						} else if ( selectedRemoteSite ) {
 							await connectSite( { site: selectedRemoteSite, localSiteId: newSite.id } );
 							const pullOptions: SyncOption[] = [ 'all' ];
 							void dispatch(
 								syncOperationsThunks.pullSite( {
-									client,
 									connectedSite: selectedRemoteSite,
 									selectedSite: newSite,
 									options: { optionsToSync: pullOptions },
@@ -309,7 +308,6 @@ export function useAddSite() {
 		[
 			__,
 			clearImportState,
-			client,
 			createSite,
 			dispatch,
 			fileForImport,
@@ -346,6 +344,8 @@ export function useAddSite() {
 			setBlueprintSuggestedSiteName,
 			blueprintRequiresCustomDomain,
 			setBlueprintRequiresCustomDomain,
+			selectedRemoteProvider,
+			setSelectedRemoteProvider,
 			selectedRemoteSite,
 			setSelectedRemoteSite,
 			existingDomainNames,
@@ -372,6 +372,7 @@ export function useAddSite() {
 			blueprintSuggestedHttps,
 			blueprintSuggestedSiteName,
 			blueprintRequiresCustomDomain,
+			selectedRemoteProvider,
 			selectedRemoteSite,
 			existingDomainNames,
 			loadAllCustomDomains,
