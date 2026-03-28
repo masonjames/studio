@@ -6,8 +6,12 @@
 echo "--- :rubygems: Setting up Gems"
 install_gems
 
-echo "--- :closed_lock_with_key: Installing Secrets"
-bundle exec fastlane run configure_apply
+if [ "${STUDIO_SKIP_SIGNING:-false}" = "true" ]; then
+  echo "--- :information_source: Skipping signing setup because STUDIO_SKIP_SIGNING=true"
+else
+  echo "--- :closed_lock_with_key: Installing Secrets"
+  bundle exec fastlane run configure_apply
 
-echo "--- :testflight: Fetching Signing Certificates"
-bundle exec fastlane set_up_signing
+  echo "--- :testflight: Fetching Signing Certificates"
+  bundle exec fastlane set_up_signing
+fi

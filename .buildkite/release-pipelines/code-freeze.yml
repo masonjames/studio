@@ -25,5 +25,5 @@ steps:
       queue: mac
     retry:
       manual:
-        reason: If release jobs fail, you should always re-trigger the task from Releases V2 rather than retrying the individual job from Buildkite
+        reason: Re-trigger this release action from the Release Dispatch workflow or the studio-release-dispatch Buildkite pipeline instead of retrying the individual job
         allowed: false

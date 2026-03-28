@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/buildkite/pipeline-schema/main/schema.json
+---
+
+steps:
+  - label: ":rocket: Release Dispatch"
+    command: |
+      source .buildkite/shared-pipeline-vars
+
+      case "${RELEASE_ACTION}" in
+        code-freeze)
+          PIPELINE_FILE=".buildkite/release-pipelines/code-freeze.yml"
+          ;;
+        new-beta-release)
+          PIPELINE_FILE=".buildkite/release-pipelines/new-beta-release.yml"
+          ;;
+        finalize-release)
+          PIPELINE_FILE=".buildkite/release-pipelines/finalize-release.yml"
+          ;;
+        publish-release)
+          PIPELINE_FILE=".buildkite/release-pipelines/publish-release.yml"
+          ;;
+        new-hotfix-release)
+          PIPELINE_FILE=".buildkite/release-pipelines/new-hotfix-release.yml"
+          ;;
+        *)
+          echo "Unknown RELEASE_ACTION: ${RELEASE_ACTION}"
+          exit 1
+          ;;
+      esac
+
+      if [ -z "${RELEASE_VERSION:-}" ]; then
+        echo "RELEASE_VERSION must be set"
+        exit 1
+      fi
+
+      echo "--- :pipeline: Uploading ${PIPELINE_FILE}"
+      buildkite-agent pipeline upload "${PIPELINE_FILE}"
+    agents:
+      queue: mac

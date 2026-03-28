@@ -11,6 +11,25 @@ import { exec as pkgExec } from '@yao-pkg/pkg';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 
 const repoRoot = path.resolve( __dirname, '../..' );
+const skipSigning = process.env.STUDIO_SKIP_SIGNING === 'true';
+const windowsCodeSigningCertificatePath = path.join( repoRoot, 'certificate.pfx' );
+const hasWindowsCodeSigning =
+	! skipSigning &&
+	!! process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD &&
+	fs.existsSync( windowsCodeSigningCertificatePath );
+
+const osxSignConfig = {
+	optionsForFile: ( filePath: string ) => {
+		// The bundled Node binary requires specific entitlements for V8 JIT compilation.
+		// Without these, V8 crashes with SIGTRAP when trying to allocate executable memory.
+		if ( filePath.endsWith( 'bin/node' ) ) {
+			return {
+				entitlements: path.join( repoRoot, 'apps', 'studio', 'entitlements', 'node.plist' ),
+			};
+		}
+		return {};
+	},
+};
 
 const config: ForgeConfig = {
 	packagerConfig: {
@@ -22,18 +41,7 @@ const config: ForgeConfig = {
 		],
 		executableName: process.platform === 'linux' ? 'studio' : undefined,
 		icon: path.join( __dirname, 'assets', 'studio-app-icon' ),
-		osxSign: {
-			optionsForFile: ( filePath ) => {
-				// The bundled Node binary requires specific entitlements for V8 JIT compilation.
-				// Without these, V8 crashes with SIGTRAP when trying to allocate executable memory.
-				if ( filePath.endsWith( 'bin/node' ) ) {
-					return {
-						entitlements: path.join( repoRoot, 'apps', 'studio', 'entitlements', 'node.plist' ),
-					};
-				}
-				return {};
-			},
-		},
+		...( skipSigning ? {} : { osxSign: osxSignConfig } ),
 		ignore: [
 			// Exclude major development directories
 			/^\/\..*/, // All dotfiles and dot directories
@@ -91,13 +99,19 @@ const config: ForgeConfig = {
 				setupIcon: path.join( __dirname, 'assets', 'studio-app-icon.ico' ),
 				// This icon is shown in Control Panel -> Programs and Features
 				// Windows Explorer caches the icon agressively; use the cache busting param when necessary.
-				iconUrl: 'https://s0.wp.com/i/studio-app/studio-app-icon.ico?v=3',
+				iconUrl:
+					process.env.STUDIO_WINDOWS_ICON_URL ||
+					'https://s0.wp.com/i/studio-app/studio-app-icon.ico?v=3',
 
 				setupExe: 'studio-setup.exe',
 
-				// CI code-signing setup writes certificate.pfx at the repository root.
-				certificateFile: path.join( repoRoot, 'certificate.pfx' ),
-				certificatePassword: process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD,
+				...( hasWindowsCodeSigning
+					? {
+							// CI code-signing setup writes certificate.pfx at the repository root.
+							certificateFile: windowsCodeSigningCertificatePath,
+							certificatePassword: process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD,
+					  }
+					: {} ),
 			},
 			[ 'win32' ]
 		),

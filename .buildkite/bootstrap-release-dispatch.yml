@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/buildkite/pipeline-schema/main/schema.json
+---
+
+steps:
+  - label: ":pipeline: Upload Release Dispatch Pipeline"
+    command: |
+      source .buildkite/shared-pipeline-vars
+      buildkite-agent pipeline upload .buildkite/release-pipelines/manual-dispatch.yml
+    agents:
+      queue: mac

@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/buildkite/pipeline-schema/main/schema.json
+---
+
+steps:
+  - label: ":pipeline: Upload CI Pipeline"
+    command: |
+      source .buildkite/shared-pipeline-vars
+      buildkite-agent pipeline upload .buildkite/pipeline.yml
+    agents:
+      queue: mac

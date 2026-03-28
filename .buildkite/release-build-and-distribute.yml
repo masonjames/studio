@@ -22,10 +22,14 @@ steps:
           queue: mac
         command: |
           .buildkite/commands/checkout-release-branch.sh "${RELEASE_VERSION}"
+          trap 'git checkout -- apps/studio/src/release-config.ts >/dev/null 2>&1 || true' EXIT
 
           .buildkite/commands/prepare-environment.sh
 
           .buildkite/commands/install-node-dependencies.sh
+
+          echo "--- :electron: Writing release config"
+          node ./scripts/write-release-config.mjs
 
           echo "--- :node: Building Binary"
           npm run make:macos-{{matrix}}
@@ -49,8 +53,12 @@ steps:
           echo "--- :node: Packaging in DMG"
           npm run make:dmg-{{matrix}}
 
-          echo "--- 📃 Notarizing Binary"
-          bundle exec fastlane notarize_binary
+          if [ "${STUDIO_SKIP_SIGNING:-false}" != "true" ]; then
+            echo "--- 📃 Notarizing Binary"
+            bundle exec fastlane notarize_binary
+          else
+            echo "--- :information_source: Skipping notarization because STUDIO_SKIP_SIGNING=true"
+          fi
         plugins: [$CI_TOOLKIT_PLUGIN, $NVM_PLUGIN]
         artifact_paths:
           - apps/studio/out/**/*.app.zip
