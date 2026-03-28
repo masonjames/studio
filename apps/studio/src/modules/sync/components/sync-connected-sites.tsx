@@ -62,7 +62,7 @@ const SyncConnectedSiteControls = ( {
 	const isAnySitePulling = useRootSelector( syncOperationsSelectors.selectIsAnySitePulling );
 	const isAnySitePushing = useRootSelector( syncOperationsSelectors.selectIsAnySitePushing );
 	const getLastSyncTimeText = useLastSyncTimeText();
-	const { user, client } = useAuth();
+	const { user } = useAuth();
 	const { data: connectedSites = [] } = useGetConnectedSitesForLocalSiteQuery( {
 		localSiteId: selectedSite.id,
 		userId: user?.id,
@@ -95,6 +95,16 @@ const SyncConnectedSiteControls = ( {
 										'Another Studio site is syncing. Please wait for the sync to finish before you pull this site.'
 								  )
 						}
+						placement="top-start"
+					>
+						<Button variant="link" disabled={ true }>
+							<Icon icon={ cloudDownload } />
+							{ __( 'Pull' ) }
+						</Button>
+					</Tooltip>
+				) : ! connectedSite.capabilities.pull ? (
+					<Tooltip
+						text={ __( 'Pull is not available for this provider yet.' ) }
 						placement="top-start"
 					>
 						<Button variant="link" disabled={ true }>
@@ -143,6 +153,16 @@ const SyncConnectedSiteControls = ( {
 							{ __( 'Push' ) }
 						</Button>
 					</Tooltip>
+				) : ! connectedSite.capabilities.push ? (
+					<Tooltip
+						text={ __( 'Push is not available for this provider yet.' ) }
+						placement="top-start"
+					>
+						<Button variant="link" disabled={ true }>
+							<Icon icon={ cloudUpload } />
+							{ __( 'Push' ) }
+						</Button>
+					</Tooltip>
 				) : (
 					<DynamicTooltip
 						getTooltipText={ () => getLastSyncTimeText( connectedSite.lastPushTimestamp, 'push' ) }
@@ -182,13 +202,9 @@ const SyncConnectedSiteControls = ( {
 							);
 						} }
 						onPull={ ( tree ) => {
-							if ( ! client ) {
-								return;
-							}
 							const pullOptions = convertTreeToPullOptions( tree );
 							void dispatch(
 								syncOperationsThunks.pullSite( {
-									client,
 									connectedSite,
 									selectedSite,
 									options: pullOptions,
@@ -270,7 +286,7 @@ const SyncConnectedSitesSectionItem = ( {
 		pushState?.uploadProgress
 	);
 
-	function clearPullState( selectedSiteId: string, remoteSiteId: number ) {
+	function clearPullState( selectedSiteId: string, remoteSiteId: string ) {
 		clearImportState( selectedSiteId );
 		dispatch(
 			syncOperationsActions.clearPullState( {
@@ -611,7 +627,7 @@ const SyncConnectedSitesSectionItem = ( {
 
 type SyncConnectedSiteSectionProps = {
 	connectedSite: SyncSite;
-	disconnectSite: ( id: number ) => void;
+	disconnectSite: ( id: string ) => void;
 	selectedSite: SiteDetails;
 };
 
@@ -626,6 +642,15 @@ const SyncConnectedSiteSection = ( {
 	const isOffline = useOffline();
 
 	const handleDisconnectSite = async () => {
+		const clearConnectedPullState = () => {
+			void dispatch(
+				syncOperationsActions.clearPullState( {
+					selectedSiteId: selectedSite.id,
+					remoteSiteId: connectedSite.id,
+				} )
+			);
+		};
+
 		const dontShowDisconnectWarning = localStorage.getItem( 'dontShowDisconnectWarning' );
 		if ( ! dontShowDisconnectWarning ) {
 			const CANCEL_BUTTON_INDEX = 1;
@@ -637,9 +662,7 @@ const SyncConnectedSiteSection = ( {
 
 			const { response, checkboxChecked } = await getIpcApi().showMessageBox( {
 				message: disconnectMessage,
-				detail: __(
-					'Your WordPress.com site will not be affected by disconnecting it from Studio.'
-				),
+				detail: __( 'Your remote site will not be affected by disconnecting it from Studio.' ),
 				buttons: [ __( 'Disconnect' ), __( 'Cancel' ) ],
 				cancelId: CANCEL_BUTTON_INDEX,
 				checkboxLabel: __( "Don't ask again" ),
@@ -650,15 +673,11 @@ const SyncConnectedSiteSection = ( {
 					localStorage.setItem( 'dontShowDisconnectWarning', 'true' );
 				}
 				disconnectSite( connectedSite.id );
-				void dispatch(
-					syncOperationsActions.clearPullState( {
-						selectedSiteId: selectedSite.id,
-						remoteSiteId: connectedSite.id,
-					} )
-				);
+				clearConnectedPullState();
 			}
 		} else {
 			disconnectSite( connectedSite.id );
+			clearConnectedPullState();
 		}
 	};
 
@@ -775,7 +794,7 @@ export function SyncConnectedSites( {
 	selectedSite,
 }: {
 	connectedSites: SyncSite[];
-	disconnectSite: ( id: number ) => void;
+	disconnectSite: ( id: string ) => void;
 	selectedSite: SiteDetails;
 } ) {
 	return (

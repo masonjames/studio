@@ -3,7 +3,12 @@ import { useContentTabs } from 'src/hooks/use-content-tabs';
 import { useIpcListener } from 'src/hooks/use-ipc-listener';
 import { useSiteDetails } from 'src/hooks/use-site-details';
 import { getIpcApi } from 'src/lib/get-ipc-api';
-import { SyncSite } from 'src/modules/sync/types';
+import {
+	buildRemoteSiteKey,
+	getWpcomNumericSiteId,
+	isWpcomSyncSite,
+	SyncSite,
+} from 'src/modules/sync/types';
 import { useAppDispatch } from 'src/stores';
 import {
 	connectedSitesActions,
@@ -23,7 +28,10 @@ export function useListenDeepLinkConnection() {
 		localSiteId: selectedSite?.id,
 		userId: user?.id,
 	} );
-	const connectedSiteIds = connectedSites.map( ( { id } ) => id );
+	const connectedSiteIds = connectedSites
+		.filter( isWpcomSyncSite )
+		.map( ( site ) => getWpcomNumericSiteId( site ) )
+		.filter( ( id ): id is number => typeof id === 'number' );
 	const { refetch: refetchWpComSites } = useGetWpComSitesQuery( {
 		connectedSiteIds,
 		userId: user?.id,
@@ -45,7 +53,12 @@ export function useListenDeepLinkConnection() {
 		) => {
 			// Create minimal site object optimistically to connect immediately
 			const minimalSite: SyncSite = {
-				id: remoteSiteId,
+				id: buildRemoteSiteKey( 'wpcom', String( remoteSiteId ) ),
+				remoteSiteId: String( remoteSiteId ),
+				provider: 'wpcom',
+				providerLabel: 'WordPress.com',
+				legacyNumericId: remoteSiteId,
+				wpcomUserId: user?.id,
 				localSiteId: studioSiteId,
 				name: '',
 				url: '',
@@ -53,6 +66,14 @@ export function useListenDeepLinkConnection() {
 				isPressable: false,
 				environmentType: null,
 				syncSupport: 'already-connected',
+				capabilities: {
+					pull: true,
+					push: true,
+					backupCreate: true,
+					backupsRead: true,
+					importCreate: true,
+					restoreCreate: true,
+				},
 				lastPullTimestamp: null,
 				lastPushTimestamp: null,
 			};
@@ -68,7 +89,11 @@ export function useListenDeepLinkConnection() {
 			}
 
 			// Mark site as loading in ephemeral Redux state (not persisted to storage)
-			dispatch( connectedSitesActions.addLoadingSiteId( remoteSiteId ) );
+			dispatch(
+				connectedSitesActions.addLoadingSiteId(
+					buildRemoteSiteKey( 'wpcom', String( remoteSiteId ) )
+				)
+			);
 
 			const connectPromise = connectSite( { site: minimalSite, localSiteId: studioSiteId } );
 
@@ -76,7 +101,7 @@ export function useListenDeepLinkConnection() {
 			if ( autoOpenPush ) {
 				dispatch(
 					connectedSitesActions.setSelectedRemoteSiteId( {
-						remoteSiteId,
+						remoteSiteId: buildRemoteSiteKey( 'wpcom', String( remoteSiteId ) ),
 						localSiteId: studioSiteId,
 					} )
 				);
@@ -102,14 +127,18 @@ export function useListenDeepLinkConnection() {
 						localSiteId: studioSiteId,
 						syncSupport: 'already-connected',
 					};
-					await getIpcApi().updateConnectedWpcomSites( [ fullSiteData ] );
+					await getIpcApi().updateConnectedRemoteSites( [ fullSiteData ] );
 					dispatch( connectedSitesApi.util.invalidateTags( [ 'ConnectedSites' ] ) );
 				}
 			} catch ( error ) {
 				console.error( 'Error during site connection:', error );
 			} finally {
 				fetchSingleSitePromise.unsubscribe();
-				dispatch( connectedSitesActions.removeLoadingSiteId( remoteSiteId ) );
+				dispatch(
+					connectedSitesActions.removeLoadingSiteId(
+						buildRemoteSiteKey( 'wpcom', String( remoteSiteId ) )
+					)
+				);
 			}
 
 			// Refetch all sites to update syncSites (used by the push/pull modal).

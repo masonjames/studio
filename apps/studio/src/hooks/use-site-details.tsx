@@ -199,12 +199,12 @@ export function SiteDetailsProvider( { children }: SiteDetailsProviderProps ) {
 
 				await getIpcApi().deleteSite( siteId, shouldDeleteFiles );
 
-				// After site is deleted successfully, clean up wpcom connections
+				// After site is deleted successfully, clean up remote connections
 				try {
-					const connectedSites = await getIpcApi().getConnectedWpcomSites( siteId );
+					const connectedSites = await getIpcApi().getConnectedRemoteSites( siteId );
 					const connectedSiteIds = connectedSites.map( ( site ) => site.id );
 					if ( connectedSiteIds.length > 0 ) {
-						await getIpcApi().disconnectWpcomSites( [
+						await getIpcApi().disconnectRemoteSites( [
 							{
 								siteIds: connectedSiteIds,
 								localSiteId: siteId,
@@ -213,7 +213,7 @@ export function SiteDetailsProvider( { children }: SiteDetailsProviderProps ) {
 					}
 				} catch ( error ) {
 					// If disconnection fails, log but don't fail the deletion
-					console.error( 'Failed to disconnect wpcom sites:', error );
+					console.error( 'Failed to disconnect remote sites:', error );
 				}
 			} catch ( error ) {
 				console.error( 'Error during site deletion:', error );

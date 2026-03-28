@@ -34,10 +34,10 @@ export interface IpcEvents {
 	'site-context-menu-action': [ { action: string; siteId: string } ];
 	'site-event': [ SiteEvent ];
 	'snapshot-event': [ SnapshotEvent ];
-	'sync-upload-network-paused': [ { error: string; selectedSiteId: string; remoteSiteId: number } ];
-	'sync-upload-resumed': [ { selectedSiteId: string; remoteSiteId: number } ];
-	'sync-upload-progress': [ { selectedSiteId: string; remoteSiteId: number; progress: number } ];
-	'sync-upload-manually-paused': [ { selectedSiteId: string; remoteSiteId: number } ];
+	'sync-upload-network-paused': [ { error: string; selectedSiteId: string; remoteSiteId: string } ];
+	'sync-upload-resumed': [ { selectedSiteId: string; remoteSiteId: string } ];
+	'sync-upload-progress': [ { selectedSiteId: string; remoteSiteId: string; progress: number } ];
+	'sync-upload-manually-paused': [ { selectedSiteId: string; remoteSiteId: string } ];
 	'snapshot-error': [ { operationId: crypto.UUID; data: SnapshotEventData } ];
 	'snapshot-fatal-error': [ { operationId: crypto.UUID; data: { message: string } } ];
 	'snapshot-output': [ { operationId: crypto.UUID; data: SnapshotEventData } ];

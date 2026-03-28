@@ -32,7 +32,9 @@ import { AddSiteBlueprintSelector } from './components/blueprints';
 import CreateSite from './components/create-site';
 import ImportBackup from './components/import-backup';
 import AddSiteOptions, { type AddSiteFlowType } from './components/options';
+import PullProviderRemoteSite from './components/pull-provider-remote-site';
 import { PullRemoteSite } from './components/pull-remote-site';
+import SelectRemoteProvider from './components/select-remote-provider';
 import Stepper from './components/stepper';
 import { useFindAvailableSiteName } from './hooks/use-find-available-site-name';
 import { applyBlueprintFormValues } from './lib/apply-blueprint-form-values';
@@ -84,6 +86,8 @@ interface NavigationContentProps {
 	setBlueprintSuggestedSiteName: ( name: string | undefined ) => void;
 	blueprintRequiresCustomDomain: boolean;
 	setBlueprintRequiresCustomDomain: ( requires: boolean ) => void;
+	selectedRemoteProvider?: SyncSite['provider'];
+	setSelectedRemoteProvider: ( provider?: SyncSite['provider'] ) => void;
 	selectedRemoteSite?: SyncSite;
 	setSelectedRemoteSite: ( site?: SyncSite ) => void;
 	isDeeplinkFlow: boolean;
@@ -121,6 +125,8 @@ function NavigationContent( props: NavigationContentProps ) {
 		setBlueprintSuggestedSiteName,
 		blueprintRequiresCustomDomain,
 		setBlueprintRequiresCustomDomain,
+		selectedRemoteProvider,
+		setSelectedRemoteProvider,
 		selectedRemoteSite,
 		setSelectedRemoteSite,
 		isDeeplinkFlow,
@@ -144,6 +150,8 @@ function NavigationContent( props: NavigationContentProps ) {
 				goTo( '/backup' );
 			} else if ( option === 'pullRemote' ) {
 				goTo( '/pullRemote' );
+			} else if ( option === 'pullRemoteProvider' ) {
+				goTo( '/pullRemoteProvider/select-provider' );
 			}
 		},
 		[ goTo ]
@@ -185,6 +193,21 @@ function NavigationContent( props: NavigationContentProps ) {
 		}
 	}, [ findAvailableSiteName, goTo, selectedRemoteSite ] );
 
+	const handlePullRemoteProviderSelectContinue = useCallback( () => {
+		if ( selectedRemoteProvider ) {
+			setSelectedRemoteSite( undefined );
+			goTo( '/pullRemoteProvider/select-site' );
+		}
+	}, [ goTo, selectedRemoteProvider, setSelectedRemoteSite ] );
+
+	const handlePullRemoteProviderSiteContinue = useCallback( async () => {
+		if ( selectedRemoteSite ) {
+			const availableName = await findAvailableSiteName( selectedRemoteSite.name );
+			setRemoteSiteName( availableName );
+			goTo( '/pullRemoteProvider/create' );
+		}
+	}, [ findAvailableSiteName, goTo, selectedRemoteSite ] );
+
 	const blueprints = useMemo(
 		() => blueprintsData?.blueprints.slice().reverse() || [],
 		[ blueprintsData ]
@@ -210,12 +233,19 @@ function NavigationContent( props: NavigationContentProps ) {
 		} else if ( location.path === '/pullRemote/create' ) {
 			setRemoteSiteName( '' );
 			goTo( '/pullRemote' );
+		} else if ( location.path === '/pullRemoteProvider/create' ) {
+			setRemoteSiteName( '' );
+			goTo( '/pullRemoteProvider/select-site' );
+		} else if ( location.path === '/pullRemoteProvider/select-site' ) {
+			setSelectedRemoteSite( undefined );
+			goTo( '/pullRemoteProvider/select-provider' );
 		} else if (
 			location.path === '/backup' ||
 			location.path === '/blueprint/select' ||
 			location.path === '/blueprint/deeplink' ||
 			location.path === '/create' ||
-			location.path === '/pullRemote'
+			location.path === '/pullRemote' ||
+			location.path === '/pullRemoteProvider/select-provider'
 		) {
 			if ( location.path === '/backup' ) {
 				setFileForImport( null );
@@ -227,6 +257,11 @@ function NavigationContent( props: NavigationContentProps ) {
 				setBlueprintWarnings?.( undefined );
 			}
 			if ( location.path === '/pullRemote' ) {
+				setSelectedRemoteSite( undefined );
+				setRemoteSiteName( '' );
+			}
+			if ( location.path === '/pullRemoteProvider/select-provider' ) {
+				setSelectedRemoteProvider( undefined );
 				setSelectedRemoteSite( undefined );
 				setRemoteSiteName( '' );
 			}
@@ -391,6 +426,22 @@ function NavigationContent( props: NavigationContentProps ) {
 			<Navigator.Screen className="flex-1" path="/backup/create">
 				<CreateSite { ...createSiteProps } defaultValues={ defaultValues } />
 			</Navigator.Screen>
+			<Navigator.Screen className="flex-1 flex justify-center" path="/pullRemoteProvider/select-provider">
+				<SelectRemoteProvider
+					selectedProvider={ selectedRemoteProvider }
+					onSelectProvider={ provider => {
+						setSelectedRemoteProvider( provider );
+						setSelectedRemoteSite( undefined );
+					} }
+				/>
+			</Navigator.Screen>
+			<Navigator.Screen className="flex-1 flex justify-center" path="/pullRemoteProvider/select-site">
+				<PullProviderRemoteSite
+					selectedProvider={ selectedRemoteProvider }
+					selectedRemoteSite={ selectedRemoteSite }
+					setSelectedRemoteSite={ setSelectedRemoteSite }
+				/>
+			</Navigator.Screen>
 			<Navigator.Screen className="flex-1 flex justify-center" path="/pullRemote">
 				<PullRemoteSite
 					selectedRemoteSite={ selectedRemoteSite }
@@ -398,6 +449,12 @@ function NavigationContent( props: NavigationContentProps ) {
 				/>
 			</Navigator.Screen>
 			<Navigator.Screen className="flex-1" path="/pullRemote/create">
+				<CreateSite
+					{ ...createSiteProps }
+					defaultValues={ { ...defaultValues, siteName: remoteSiteName } }
+				/>
+			</Navigator.Screen>
+			<Navigator.Screen className="flex-1" path="/pullRemoteProvider/create">
 				<CreateSite
 					{ ...createSiteProps }
 					defaultValues={ { ...defaultValues, siteName: remoteSiteName } }
@@ -411,6 +468,8 @@ function NavigationContent( props: NavigationContentProps ) {
 				onBlueprintDeeplinkContinue={ handleBlueprintDeeplinkContinue }
 				onBackupContinue={ handleBackupContinue }
 				onPullRemoteContinue={ handlePullRemoteContinue }
+				onPullRemoteProviderSelectContinue={ handlePullRemoteProviderSelectContinue }
+				onPullRemoteProviderSiteContinue={ handlePullRemoteProviderSiteContinue }
 				onCreateSubmit={ () => {
 					formRef.current?.requestSubmit();
 				} }
@@ -419,6 +478,8 @@ function NavigationContent( props: NavigationContentProps ) {
 				canSubmitBlueprintDeeplink={ !! selectedBlueprint }
 				canSubmitBackup={ !! fileForImport }
 				canSubmitPullRemote={ !! selectedRemoteSite }
+				canSubmitPullRemoteProviderSelect={ !! selectedRemoteProvider }
+				canSubmitPullRemoteProviderSite={ !! selectedRemoteSite }
 				canSubmitCreate={ canSubmit }
 			/>
 		</>
@@ -474,6 +535,8 @@ export function AddSiteModalContent( {
 		setBlueprintSuggestedSiteName,
 		blueprintRequiresCustomDomain,
 		setBlueprintRequiresCustomDomain,
+		selectedRemoteProvider,
+		setSelectedRemoteProvider,
 		selectedRemoteSite,
 		setSelectedRemoteSite,
 		existingDomainNames,
@@ -617,6 +680,8 @@ export function AddSiteModalContent( {
 				setBlueprintSuggestedSiteName={ setBlueprintSuggestedSiteName }
 				blueprintRequiresCustomDomain={ blueprintRequiresCustomDomain }
 				setBlueprintRequiresCustomDomain={ setBlueprintRequiresCustomDomain }
+				selectedRemoteProvider={ selectedRemoteProvider }
+				setSelectedRemoteProvider={ setSelectedRemoteProvider }
 				selectedRemoteSite={ selectedRemoteSite }
 				setSelectedRemoteSite={ setSelectedRemoteSite }
 				isDeeplinkFlow={ isDeeplinkFlow }

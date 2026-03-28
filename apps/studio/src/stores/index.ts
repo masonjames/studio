@@ -189,7 +189,7 @@ const SYNC_POLLING_INTERVAL = 3000;
 const PUSH_POLLERS = new Map< string, AbortController >();
 const PULL_POLLERS = new Map< string, AbortController >();
 
-function isPushPollable( selectedSiteId: string, remoteSiteId: number ) {
+function isPushPollable( selectedSiteId: string, remoteSiteId: string ) {
 	const pushState = syncOperationsSelectors.selectPushState(
 		selectedSiteId,
 		remoteSiteId
@@ -197,12 +197,15 @@ function isPushPollable( selectedSiteId: string, remoteSiteId: number ) {
 	return pushState && PUSH_POLLING_KEYS.includes( pushState.status.key );
 }
 
-function isPullPollable( selectedSiteId: string, remoteSiteId: number ) {
+function isPullPollable( selectedSiteId: string, remoteSiteId: string ) {
 	const pullState = syncOperationsSelectors.selectPullState(
 		selectedSiteId,
 		remoteSiteId
 	)( store.getState() );
-	return pullState?.status.key === 'in-progress' && !! pullState.backupId;
+	return (
+		pullState?.status.key === 'in-progress' &&
+		( Boolean( pullState.backupId ) || Boolean( pullState.providerOperation ) )
+	);
 }
 
 function stopPushPoller( stateId: string ) {
@@ -215,7 +218,7 @@ function stopPullPoller( stateId: string ) {
 	PULL_POLLERS.delete( stateId );
 }
 
-async function startPushPoller( selectedSiteId: string, remoteSiteId: number ) {
+async function startPushPoller( selectedSiteId: string, remoteSiteId: string ) {
 	const stateId = generateStateId( selectedSiteId, remoteSiteId );
 	if ( PUSH_POLLERS.has( stateId ) ) {
 		return;
@@ -233,7 +236,6 @@ async function startPushPoller( selectedSiteId: string, remoteSiteId: number ) {
 
 			await store.dispatch(
 				syncOperationsThunks.pollPushProgress( {
-					client,
 					signal: controller.signal,
 					selectedSiteId,
 					remoteSiteId,
@@ -253,7 +255,7 @@ async function startPushPoller( selectedSiteId: string, remoteSiteId: number ) {
 	}
 }
 
-async function startPullPoller( selectedSiteId: string, remoteSiteId: number ) {
+async function startPullPoller( selectedSiteId: string, remoteSiteId: string ) {
 	const stateId = generateStateId( selectedSiteId, remoteSiteId );
 	if ( PULL_POLLERS.has( stateId ) ) {
 		return;
@@ -264,14 +266,8 @@ async function startPullPoller( selectedSiteId: string, remoteSiteId: number ) {
 
 	try {
 		while ( ! controller.signal.aborted ) {
-			const client = getWpcomClient();
-			if ( ! client ) {
-				break;
-			}
-
 			await store.dispatch(
 				syncOperationsThunks.pollPullBackup( {
-					client,
 					signal: controller.signal,
 					selectedSiteId,
 					remoteSiteId,
