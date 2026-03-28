@@ -17,7 +17,8 @@ export type AddSiteFlowType =
 	| 'blueprint'
 	| 'blueprintDeeplink'
 	| 'backup'
-	| 'pullRemote';
+	| 'pullRemote'
+	| 'pullRemoteProvider';
 interface AddSiteOptionsProps {
 	onOptionSelect: ( option: AddSiteFlowType ) => void;
 }
@@ -122,6 +123,14 @@ export default function AddSiteOptions( { onOptionSelect }: AddSiteOptionsProps 
 				title={ __( 'Pull an existing site' ) }
 				description={ __( 'Download directly from WP.com or Pressable' ) }
 				onClick={ () => onOptionSelect( 'pullRemote' ) }
+				disabled={ isOffline }
+				disabledTooltip={ importOfflineMessage }
+			/>
+			<OptionButton
+				icon={ <Icon icon={ download } size={ 24 } fill="var(--color-frame-theme)" /> }
+				title={ __( 'Pull from another host' ) }
+				description={ __( 'Choose MainWP, Hetzner, or DigitalOcean hosting' ) }
+				onClick={ () => onOptionSelect( 'pullRemoteProvider' ) }
 				disabled={ isOffline }
 				disabledTooltip={ importOfflineMessage }
 			/>

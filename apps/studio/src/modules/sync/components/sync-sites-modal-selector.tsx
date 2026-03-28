@@ -24,7 +24,12 @@ import {
 	useGetConnectedSitesForLocalSiteQuery,
 } from 'src/stores/sync/connected-sites';
 import { useGetWpComSitesQuery } from 'src/stores/sync/wpcom-sites';
-import type { SyncSite, SyncModalMode } from 'src/modules/sync/types';
+import {
+	getWpcomNumericSiteId,
+	isWpcomSyncSite,
+	type SyncSite,
+	type SyncModalMode,
+} from 'src/modules/sync/types';
 
 const SearchControl = process.env.NODE_ENV === 'test' ? () => null : SearchControlWp;
 
@@ -40,20 +45,23 @@ export function SyncSitesModalSelector( {
 	mode = 'connect',
 }: {
 	onRequestClose: () => void;
-	onConnect: ( siteId: number ) => void;
+	onConnect: ( siteId: string ) => void;
 	selectedSite: SiteDetails;
 	mode?: SyncModalMode;
 } ) {
 	const { __ } = useI18n();
 	const { user } = useAuth();
-	const [ selectedSiteId, setSelectedSiteId ] = useState< number | null >( null );
+	const [ selectedSiteId, setSelectedSiteId ] = useState< string | null >( null );
 	const isOffline = useOffline();
 
 	const { data: connectedSites = [] } = useGetConnectedSitesForLocalSiteQuery( {
 		localSiteId: selectedSite.id,
 		userId: user?.id,
 	} );
-	const connectedSiteIds = connectedSites.map( ( { id } ) => id );
+	const connectedSiteIds = connectedSites
+		.filter( isWpcomSyncSite )
+		.map( ( site ) => getWpcomNumericSiteId( site ) )
+		.filter( ( id ): id is number => typeof id === 'number' );
 
 	const {
 		data: syncSites = [],
@@ -162,8 +170,8 @@ export function SitesListContent( {
 }: {
 	isLoading: boolean;
 	syncSites: SyncSite[];
-	selectedSiteId: number | null;
-	onSelectSite: ( id: number ) => void;
+	selectedSiteId: string | null;
+	onSelectSite: ( id: string ) => void;
 } ) {
 	const { __ } = useI18n();
 	const [ searchQuery, setSearchQuery ] = useState< string >( '' );
@@ -222,8 +230,8 @@ function ListSites( {
 	onSelectSite,
 }: {
 	syncSites: SyncSite[];
-	selectedSiteId: null | number;
-	onSelectSite: ( id: number ) => void;
+	selectedSiteId: null | string;
+	onSelectSite: ( id: string ) => void;
 } ) {
 	const sortedSites = getSortedSites( syncSites );
 
@@ -366,7 +374,11 @@ function SiteItem( {
 					>
 						<Button
 							variant="link"
-							onClick={ () => getIpcApi().openURL( `https://wordpress.com/plans/${ site.id }` ) }
+							onClick={ () =>
+								getIpcApi().openURL(
+									`https://wordpress.com/plans/${ getWpcomNumericSiteId( site ) ?? site.remoteSiteId }`
+								)
+							}
 						>
 							{ __( 'Upgrade plan' ) }
 							<ArrowIcon />
@@ -379,7 +391,9 @@ function SiteItem( {
 					<Button
 						variant="link"
 						onClick={ () =>
-							getIpcApi().openURL( `https://wordpress.com/hosting-features/${ site.id }` )
+							getIpcApi().openURL(
+								`https://wordpress.com/hosting-features/${ getWpcomNumericSiteId( site ) ?? site.remoteSiteId }`
+							)
 						}
 					>
 						{ __( 'Enable hosting features' ) }

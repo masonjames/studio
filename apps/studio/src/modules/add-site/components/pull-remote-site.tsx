@@ -150,7 +150,7 @@ export function PullRemoteSite( {
 	const hasSites = syncSites.length > 0;
 	const showNoSitesView = ! hasSites && isSuccess && ! isLoading;
 
-	const handleSiteSelect = ( siteId: number ) => {
+	const handleSiteSelect = ( siteId: string ) => {
 		const site = syncSites.find( ( s ) => s.id === siteId );
 		setSelectedRemoteSite( site );
 	};

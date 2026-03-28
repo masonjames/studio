@@ -7,6 +7,11 @@ import { generateStateId } from 'src/hooks/sync-sites/use-pull-push-states';
 import { getIpcApi } from 'src/lib/get-ipc-api';
 import { getHostnameFromUrl } from 'src/lib/url-utils';
 import { store } from 'src/stores';
+import {
+	getWpcomNumericSiteId,
+	isWpcomSyncSite,
+	type RemotePullOperation,
+} from 'src/modules/sync/types';
 import { connectedSitesApi } from 'src/stores/sync/connected-sites';
 import type {
 	PullStateProgressInfo,
@@ -15,18 +20,18 @@ import type {
 import type { SyncSite } from 'src/modules/sync/types';
 import type { AppDispatch, RootState } from 'src/stores';
 import type { SyncOption } from 'src/types';
-import type { WPCOM } from 'wpcom/types';
+import { getWpcomClient } from 'src/stores/wpcom-api';
 
 async function updateSiteTimestamp( {
 	siteId,
 	localSiteId,
 	type,
 }: {
-	siteId: number;
+	siteId: string;
 	localSiteId: string;
 	type: 'pull' | 'push';
 } ) {
-	const connectedSites = await getIpcApi().getConnectedWpcomSites( localSiteId );
+	const connectedSites = await getIpcApi().getConnectedRemoteSites( localSiteId );
 	const connectedSite = connectedSites.find(
 		( { id, localSiteId: siteLocalId } ) => siteId === id && localSiteId === siteLocalId
 	);
@@ -36,7 +41,7 @@ async function updateSiteTimestamp( {
 	}
 
 	const timestampKey = type === 'pull' ? 'lastPullTimestamp' : 'lastPushTimestamp';
-	await getIpcApi().updateConnectedWpcomSites( [
+	await getIpcApi().updateConnectedRemoteSites( [
 		{
 			...connectedSite,
 			[ timestampKey ]: new Date().toISOString(),
@@ -45,8 +50,10 @@ async function updateSiteTimestamp( {
 }
 
 export type SyncBackupState = {
-	remoteSiteId: number;
+	remoteSiteId: string;
+	legacyRemoteSiteId?: number;
 	backupId: number | null;
+	providerOperation?: RemotePullOperation;
 	status: PullStateProgressInfo;
 	downloadUrl: string | null;
 	selectedSite: SiteDetails;
@@ -61,7 +68,8 @@ export type PullSiteOptions = {
 export type PullStates = Record< string, SyncBackupState >;
 
 export type SyncPushState = {
-	remoteSiteId: number;
+	remoteSiteId: string;
+	legacyRemoteSiteId?: number;
 	status: PushStateProgressInfo;
 	selectedSite: SiteDetails;
 	remoteSiteUrl: string;
@@ -127,19 +135,19 @@ const initialState: SyncOperationsState = {
 
 type UpdatePullStatePayload = {
 	selectedSiteId: string;
-	remoteSiteId: number;
+	remoteSiteId: string;
 	state: Partial< SyncBackupState >;
 };
 
 type UpdatePushStatePayload = {
 	selectedSiteId: string;
-	remoteSiteId: number;
+	remoteSiteId: string;
 	state: Partial< SyncPushState >;
 };
 
 type ClearStatePayload = {
 	selectedSiteId: string;
-	remoteSiteId: number;
+	remoteSiteId: string;
 };
 
 const syncOperationsSlice = createSlice( {
@@ -296,7 +304,7 @@ const createTypedAsyncThunk = createAsyncThunk.withTypes< {
 
 type CancelOperationPayload = {
 	selectedSiteId: string;
-	remoteSiteId: number;
+	remoteSiteId: string;
 };
 
 const cancelPushThunk = createTypedAsyncThunk(
@@ -338,7 +346,7 @@ const cancelPullThunk = createTypedAsyncThunk(
 		);
 
 		getIpcApi()
-			.removeSyncBackup( remoteSiteId )
+			.removeSyncBackup( operationId )
 			.catch( () => {
 				// Ignore errors if file doesn't exist
 			} );
@@ -383,6 +391,14 @@ const pushSiteThunk = createTypedAsyncThunk< void, PushSitePayload >(
 		const remoteSiteId = connectedSite.id;
 		const remoteSiteUrl = connectedSite.url;
 		const operationId = generateStateId( selectedSite.id, remoteSiteId );
+		const wpcomRemoteSiteId = getWpcomNumericSiteId( connectedSite );
+
+		if ( ! connectedSite.capabilities.push || ! isWpcomSyncSite( connectedSite ) || ! wpcomRemoteSiteId ) {
+			return rejectWithValue( {
+				title: sprintf( __( 'Error pushing to %s' ), connectedSite.name ),
+				message: __( 'Push is not available for this provider yet.' ),
+			} );
+		}
 
 		try {
 			PUSH_SITE_ABORT_CALLBACKS.set( operationId, abort );
@@ -392,6 +408,7 @@ const pushSiteThunk = createTypedAsyncThunk< void, PushSitePayload >(
 					selectedSiteId: selectedSite.id,
 					remoteSiteId,
 					state: {
+						legacyRemoteSiteId: wpcomRemoteSiteId,
 						status: pushStatesProgressInfo.creatingBackup,
 						selectedSite,
 						remoteSiteUrl,
@@ -430,7 +447,8 @@ const pushSiteThunk = createTypedAsyncThunk< void, PushSitePayload >(
 				remoteSiteId,
 				archivePath,
 				options?.optionsToSync,
-				options?.specificSelectionPaths
+				options?.specificSelectionPaths,
+				wpcomRemoteSiteId
 			);
 
 			if ( response.success ) {
@@ -439,6 +457,7 @@ const pushSiteThunk = createTypedAsyncThunk< void, PushSitePayload >(
 						selectedSiteId: selectedSite.id,
 						remoteSiteId,
 						state: {
+							legacyRemoteSiteId: wpcomRemoteSiteId,
 							status: pushStatesProgressInfo.creatingRemoteBackup,
 							selectedSite,
 							remoteSiteUrl,
@@ -468,7 +487,6 @@ const pushSiteThunk = createTypedAsyncThunk< void, PushSitePayload >(
 
 // Thunk for pull operation
 type PullSitePayload = {
-	client: WPCOM;
 	connectedSite: SyncSite;
 	selectedSite: SiteDetails;
 	options: {
@@ -478,8 +496,9 @@ type PullSitePayload = {
 };
 
 type PullSiteResult = {
-	backupId: number;
-	remoteSiteId: number;
+	backupId?: number;
+	providerOperation?: RemotePullOperation;
+	remoteSiteId: string;
 };
 
 const pullSiteResponseSchema = z.object( {
@@ -527,10 +546,18 @@ const syncBackupResponseSchema = z.object( {
 
 export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayload >(
 	'syncOperations/pullSite',
-	async ( { client, connectedSite, selectedSite, options }, { dispatch, rejectWithValue } ) => {
+	async ( { connectedSite, selectedSite, options }, { dispatch, rejectWithValue } ) => {
 		const pullStatesProgressInfo = getPullStatesProgressInfo();
 		const remoteSiteId = connectedSite.id;
 		const remoteSiteUrl = connectedSite.url;
+		const wpcomRemoteSiteId = getWpcomNumericSiteId( connectedSite );
+
+		if ( ! connectedSite.capabilities.pull ) {
+			return rejectWithValue( {
+				title: sprintf( __( 'Error pulling from %s' ), connectedSite.name ),
+				message: __( 'Pull is not available for this provider yet.' ),
+			} );
+		}
 
 		dispatch(
 			syncOperationsActions.updatePullState( {
@@ -538,6 +565,8 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 				remoteSiteId,
 				state: {
 					backupId: null,
+					providerOperation: undefined,
+					legacyRemoteSiteId: wpcomRemoteSiteId,
 					status: pullStatesProgressInfo[ 'in-progress' ],
 					downloadUrl: null,
 					remoteSiteUrl,
@@ -547,45 +576,84 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 		);
 
 		try {
-			// Initializing backup on remote
-			const requestBody: {
-				options: SyncOption[];
-				include_path_list?: string[];
-			} = {
-				options: options.optionsToSync,
-				include_path_list: options.include_path_list,
-			};
+			if ( isWpcomSyncSite( connectedSite ) ) {
+				const client = getWpcomClient();
+				if ( ! client || ! wpcomRemoteSiteId ) {
+					return rejectWithValue( {
+						title: sprintf( __( 'Error pulling from %s' ), connectedSite.name ),
+						message: __( 'Studio was unable to connect to WordPress.com. Please try again.' ),
+					} );
+				}
 
-			const rawResponse = await client.req.post( {
-				path: `/sites/${ remoteSiteId }/studio-app/sync/backup`,
-				apiNamespace: 'wpcom/v2',
-				body: requestBody,
-			} );
-			const response = pullSiteResponseSchema.parse( rawResponse );
+				const requestBody: {
+					options: SyncOption[];
+					include_path_list?: string[];
+				} = {
+					options: options.optionsToSync,
+					include_path_list: options.include_path_list,
+				};
 
-			if ( response.success ) {
+				const rawResponse = await client.req.post( {
+					path: `/sites/${ wpcomRemoteSiteId }/studio-app/sync/backup`,
+					apiNamespace: 'wpcom/v2',
+					body: requestBody,
+				} );
+				const response = pullSiteResponseSchema.parse( rawResponse );
+
+				if ( response.success ) {
+					dispatch(
+						syncOperationsActions.updatePullState( {
+							selectedSiteId: selectedSite.id,
+							remoteSiteId,
+							state: {
+								backupId: response.backup_id,
+								legacyRemoteSiteId: wpcomRemoteSiteId,
+							},
+						} )
+					);
+
+					return {
+						backupId: response.backup_id,
+						remoteSiteId,
+					};
+				}
+
+				throw new Error( 'Pull request failed' );
+			}
+
+			if ( connectedSite.provider === 'mainwpBridge' && connectedSite.providerAccountId ) {
+				const providerOperation = await getIpcApi().startRemotePull(
+					connectedSite.providerAccountId,
+					connectedSite.remoteSiteId
+				);
 				dispatch(
 					syncOperationsActions.updatePullState( {
 						selectedSiteId: selectedSite.id,
 						remoteSiteId,
 						state: {
-							backupId: response.backup_id,
+							providerOperation,
 						},
 					} )
 				);
 
 				return {
-					backupId: response.backup_id,
+					providerOperation,
 					remoteSiteId,
 				};
-			} else {
-				throw new Error( 'Pull request failed' );
 			}
+
+			return rejectWithValue( {
+				title: sprintf( __( 'Error pulling from %s' ), connectedSite.name ),
+				message: __( 'This provider is not supported yet.' ),
+			} );
 		} catch ( error ) {
 			Sentry.captureException( error );
 			return rejectWithValue( {
 				title: sprintf( __( 'Error pulling from %s' ), connectedSite.name ),
-				message: __( 'Studio was unable to connect to WP.com. Please try again.' ),
+				message:
+					error instanceof Error
+						? error.message
+						: __( 'Studio was unable to connect to the remote host. Please try again.' ),
 			} );
 		}
 	}
@@ -593,20 +661,16 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 
 // Thunk for polling push progress
 type PollPushProgressPayload = {
-	client: WPCOM;
 	selectedSiteId: string;
 	signal: AbortSignal;
-	remoteSiteId: number;
+	remoteSiteId: string;
 };
 
 type ImportResponse = z.infer< typeof importResponseSchema >;
 
 const pollPushProgressThunk = createTypedAsyncThunk(
 	'syncOperations/pollPushProgress',
-	async (
-		{ client, selectedSiteId, signal, remoteSiteId }: PollPushProgressPayload,
-		{ dispatch, getState, rejectWithValue }
-	) => {
+	async ( { selectedSiteId, signal, remoteSiteId }: PollPushProgressPayload, { dispatch, getState, rejectWithValue } ) => {
 		const pushStatesProgressInfo = getPushStatesProgressInfo();
 		// condition guarantees currentPushState exists and is not cancelled
 		const currentPushState = syncOperationsSelectors.selectPushState(
@@ -617,8 +681,17 @@ const pollPushProgressThunk = createTypedAsyncThunk(
 			return;
 		}
 
+		const client = getWpcomClient();
+		const wpcomRemoteSiteId = currentPushState.legacyRemoteSiteId;
+		if ( ! client || ! wpcomRemoteSiteId ) {
+			return rejectWithValue( {
+				title: sprintf( __( 'Error pushing from %s' ), currentPushState.selectedSite.name ),
+				message: __( 'Studio was unable to connect to WordPress.com. Please try again.' ),
+			} );
+		}
+
 		try {
-			const rawResponse = await client.req.get( `/sites/${ remoteSiteId }/studio-app/sync/import`, {
+			const rawResponse = await client.req.get( `/sites/${ wpcomRemoteSiteId }/studio-app/sync/import`, {
 				apiNamespace: 'wpcom/v2',
 			} );
 			const response = importResponseSchema.parse( rawResponse );
@@ -732,18 +805,14 @@ const IN_PROGRESS_TO_DOWNLOADING_STEP = DOWNLOADING_INITIAL_VALUE - IN_PROGRESS_
 
 // Thunk for polling pull backup status
 type PollPullBackupPayload = {
-	client: WPCOM;
 	selectedSiteId: string;
 	signal: AbortSignal;
-	remoteSiteId: number;
+	remoteSiteId: string;
 };
 
 const pollPullBackupThunk = createTypedAsyncThunk(
 	'syncOperations/pollPullBackup',
-	async (
-		{ client, selectedSiteId, remoteSiteId, signal }: PollPullBackupPayload,
-		{ dispatch, getState, rejectWithValue }
-	) => {
+	async ( { selectedSiteId, remoteSiteId, signal }: PollPullBackupPayload, { dispatch, getState, rejectWithValue } ) => {
 		const pullStatesProgressInfo = getPullStatesProgressInfo();
 		const currentPullState = syncOperationsSelectors.selectPullState(
 			selectedSiteId,
@@ -754,14 +823,182 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 			return;
 		}
 
-		const backupId = currentPullState.backupId;
-		if ( ! backupId ) {
-			console.error( 'No backup ID found' );
-			return;
-		}
+		const operationId = generateStateId( selectedSiteId, remoteSiteId );
+
+		const confirmLargeBackupPull = async ( fileSize: number ) => {
+			if ( fileSize <= SYNC_PUSH_SIZE_LIMIT_BYTES ) {
+				return true;
+			}
+
+			const CANCEL_ID = 1;
+			const { response: userChoice } = await getIpcApi().showMessageBox( {
+				type: 'warning',
+				message: __( "Large site's backup" ),
+				detail: sprintf(
+					__(
+						"Your site's backup exceeds %d GB. Pulling it will prevent you from pushing the site back.\n\nDo you want to continue?"
+					),
+					SYNC_PUSH_SIZE_LIMIT_GB
+				),
+				buttons: [ __( 'Continue' ), __( 'Cancel' ) ],
+				defaultId: 0,
+				cancelId: CANCEL_ID,
+			} );
+
+			if ( userChoice !== CANCEL_ID ) {
+				return true;
+			}
+
+			dispatch(
+				syncOperationsActions.updatePullState( {
+					selectedSiteId,
+					remoteSiteId,
+					state: {
+						status: pullStatesProgressInfo.cancelled,
+					},
+				} )
+			);
+			void dispatch( syncOperationsActions.clearPullState( { selectedSiteId, remoteSiteId } ) );
+			return false;
+		};
+
+		const importDownloadedBackup = async ( filePath: string ) => {
+			await getIpcApi().stopServer( selectedSiteId );
+			await getIpcApi().importSite( {
+				id: selectedSiteId,
+				backupFile: {
+					path: filePath,
+					type: 'application/tar+gzip',
+				},
+			} );
+			await getIpcApi().startServer( selectedSiteId );
+		};
+
+		const importDownloadedBackupAndCleanup = async ( filePath: string ) => {
+			try {
+				await importDownloadedBackup( filePath );
+			} finally {
+				await getIpcApi().removeSyncBackup( operationId ).catch( () => undefined );
+			}
+		};
 
 		try {
-			const rawResponse = await client.req.get( `/sites/${ remoteSiteId }/studio-app/sync/backup`, {
+			if ( currentPullState.providerOperation ) {
+				const providerAccountId = currentPullState.providerOperation.providerAccountId;
+				const update = await getIpcApi().pollRemotePull(
+					providerAccountId,
+					currentPullState.providerOperation
+				);
+
+				signal.throwIfAborted();
+
+				if ( update.kind === 'failed' ) {
+					return rejectWithValue( {
+						title: sprintf( __( 'Error pulling from %s' ), currentPullState.selectedSite.name ),
+						message: update.message,
+					} );
+				}
+
+				if ( update.kind === 'running' ) {
+					dispatch(
+						syncOperationsActions.updatePullState( {
+							selectedSiteId,
+							remoteSiteId,
+							state: {
+								providerOperation: update.operation,
+								status: {
+									...pullStatesProgressInfo[ 'in-progress' ],
+									progress: update.progress,
+									message: update.message,
+								},
+							},
+						} )
+					);
+					return;
+				}
+
+				const exportJobId = update.operation.exportJobId;
+				if ( ! exportJobId ) {
+					return rejectWithValue( {
+						title: sprintf( __( 'Error pulling from %s' ), currentPullState.selectedSite.name ),
+						message: __( 'The remote export job is missing.' ),
+					} );
+				}
+
+				if (
+					typeof update.artifactSizeBytes === 'number' &&
+					!( await confirmLargeBackupPull( update.artifactSizeBytes ) )
+				) {
+					return;
+				}
+
+				dispatch(
+					syncOperationsActions.updatePullState( {
+						selectedSiteId,
+						remoteSiteId,
+						state: {
+							providerOperation: update.operation,
+							status: pullStatesProgressInfo.downloading,
+						},
+					} )
+				);
+
+				const { filePath } = await getIpcApi().downloadRemotePullArtifact(
+					providerAccountId,
+					exportJobId,
+					operationId
+				);
+
+				dispatch(
+					syncOperationsActions.updatePullState( {
+						selectedSiteId,
+						remoteSiteId,
+						state: {
+							providerOperation: update.operation,
+							status: pullStatesProgressInfo.importing,
+						},
+					} )
+				);
+
+				await importDownloadedBackupAndCleanup( filePath );
+
+				await updateSiteTimestamp( {
+					siteId: remoteSiteId,
+					localSiteId: selectedSiteId,
+					type: 'pull',
+				} );
+				void dispatch( connectedSitesApi.util.invalidateTags( [ 'ConnectedSites' ] ) );
+
+				dispatch(
+					syncOperationsActions.updatePullState( {
+						selectedSiteId,
+						remoteSiteId,
+						state: {
+							providerOperation: undefined,
+							status: pullStatesProgressInfo.finished,
+						},
+					} )
+				);
+
+				getIpcApi().showNotification( {
+					title: currentPullState.selectedSite.name,
+					body: sprintf(
+						__( 'Studio site has been updated from %s' ),
+						getHostnameFromUrl( currentPullState.remoteSiteUrl )
+					),
+				} );
+				return;
+			}
+
+			const backupId = currentPullState.backupId;
+			const client = getWpcomClient();
+			const wpcomRemoteSiteId = currentPullState.legacyRemoteSiteId;
+			if ( ! backupId || ! client || ! wpcomRemoteSiteId ) {
+				console.error( 'No WordPress.com backup state found' );
+				return;
+			}
+
+			const rawResponse = await client.req.get( `/sites/${ wpcomRemoteSiteId }/studio-app/sync/backup`, {
 				apiNamespace: 'wpcom/v2',
 				backup_id: backupId,
 			} );
@@ -777,42 +1014,9 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 			const downloadUrl = hasBackupCompleted ? response.download_url : null;
 
 			if ( downloadUrl ) {
-				const { selectedSite, remoteSiteUrl } = currentPullState;
-
 				const fileSize = await getIpcApi().checkSyncBackupSize( downloadUrl );
-
-				if ( fileSize > SYNC_PUSH_SIZE_LIMIT_BYTES ) {
-					const CANCEL_ID = 1;
-
-					const { response: userChoice } = await getIpcApi().showMessageBox( {
-						type: 'warning',
-						message: __( "Large site's backup" ),
-						detail: sprintf(
-							__(
-								"Your site's backup exceeds %d GB. Pulling it will prevent you from pushing the site back.\n\nDo you want to continue?"
-							),
-							SYNC_PUSH_SIZE_LIMIT_GB
-						),
-						buttons: [ __( 'Continue' ), __( 'Cancel' ) ],
-						defaultId: 0,
-						cancelId: CANCEL_ID,
-					} );
-
-					if ( userChoice === CANCEL_ID ) {
-						dispatch(
-							syncOperationsActions.updatePullState( {
-								selectedSiteId,
-								remoteSiteId,
-								state: {
-									status: pullStatesProgressInfo.cancelled,
-								},
-							} )
-						);
-						void dispatch(
-							syncOperationsActions.clearPullState( { selectedSiteId, remoteSiteId } )
-						);
-						return;
-					}
+				if ( !( await confirmLargeBackupPull( fileSize ) ) ) {
+					return;
 				}
 
 				dispatch(
@@ -826,7 +1030,6 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 					} )
 				);
 
-				const operationId = generateStateId( selectedSiteId, remoteSiteId );
 				const filePath = await getIpcApi().downloadSyncBackup(
 					remoteSiteId,
 					downloadUrl,
@@ -843,17 +1046,7 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 					} )
 				);
 
-				await getIpcApi().stopServer( selectedSiteId );
-				await getIpcApi().importSite( {
-					id: selectedSiteId,
-					backupFile: {
-						path: filePath,
-						type: 'application/tar+gzip',
-					},
-				} );
-				await getIpcApi().startServer( selectedSiteId );
-
-				await getIpcApi().removeSyncBackup( remoteSiteId );
+				await importDownloadedBackupAndCleanup( filePath );
 
 				await updateSiteTimestamp( {
 					siteId: remoteSiteId,
@@ -873,38 +1066,37 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 				);
 
 				getIpcApi().showNotification( {
-					title: selectedSite.name,
+					title: currentPullState.selectedSite.name,
 					body: sprintf(
-						// translators: %s is the site url without the protocol.
 						__( 'Studio site has been updated from %s' ),
-						getHostnameFromUrl( remoteSiteUrl )
+						getHostnameFromUrl( currentPullState.remoteSiteUrl )
 					),
 				} );
-			} else {
-				// Calculate backup status with progress
-				const frontendStatus = hasBackupCompleted
-					? pullStatesProgressInfo.downloading.key
-					: response.status;
-				let statusWithProgress = pullStatesProgressInfo[ frontendStatus ];
-				if ( response.status === 'in-progress' ) {
-					statusWithProgress = {
-						...pullStatesProgressInfo[ frontendStatus ],
-						progress:
-							IN_PROGRESS_INITIAL_VALUE +
-							IN_PROGRESS_TO_DOWNLOADING_STEP * ( response.percent / 100 ),
-					};
-				}
-
-				dispatch(
-					syncOperationsActions.updatePullState( {
-						selectedSiteId,
-						remoteSiteId,
-						state: {
-							status: statusWithProgress,
-						},
-					} )
-				);
+				return;
 			}
+
+			const frontendStatus = hasBackupCompleted
+				? pullStatesProgressInfo.downloading.key
+				: response.status;
+			let statusWithProgress = pullStatesProgressInfo[ frontendStatus ];
+			if ( response.status === 'in-progress' ) {
+				statusWithProgress = {
+					...pullStatesProgressInfo[ frontendStatus ],
+					progress:
+						IN_PROGRESS_INITIAL_VALUE +
+						IN_PROGRESS_TO_DOWNLOADING_STEP * ( response.percent / 100 ),
+				};
+			}
+
+			dispatch(
+				syncOperationsActions.updatePullState( {
+					selectedSiteId,
+					remoteSiteId,
+					state: {
+						status: statusWithProgress,
+					},
+				} )
+			);
 		} catch ( error ) {
 			if ( signal.aborted ) {
 				return;
@@ -913,7 +1105,10 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 			Sentry.captureException( error );
 			return rejectWithValue( {
 				title: sprintf( __( 'Error pulling from %s' ), currentPullState.selectedSite.name ),
-				message: __( 'Failed to check backup file size. Please try again.' ),
+				message:
+					error instanceof Error
+						? error.message
+						: __( 'Failed to check backup file size. Please try again.' ),
 			} );
 		}
 	}
@@ -938,27 +1133,32 @@ function mapImportResponseToPushState( response: ImportResponse ): PushStateProg
 }
 
 // Thunk to initialize push states from in-progress server operations on mount
-type InitializeSyncStatesPayload = {
-	client: WPCOM;
-};
-
 export const initializeSyncStatesThunk = createTypedAsyncThunk(
 	'syncOperations/initializeSyncStates',
-	async ( { client }: InitializeSyncStatesPayload, { dispatch } ) => {
+	async ( _arg, { dispatch } ) => {
+		const client = getWpcomClient();
+		if ( ! client ) {
+			return;
+		}
 		const allSites = await getIpcApi().getSiteDetails();
-		const allConnectedSites = await getIpcApi().getConnectedWpcomSites();
+		const allConnectedSites = await getIpcApi().getConnectedRemoteSites();
 
 		for ( const connectedSite of allConnectedSites ) {
 			try {
+				if ( ! isWpcomSyncSite( connectedSite ) ) {
+					continue;
+				}
+
 				const localSite = allSites.find( ( site ) => site.id === connectedSite.localSiteId );
 				const hasConnectionErrors = connectedSite?.syncSupport !== 'already-connected';
+				const wpcomRemoteSiteId = getWpcomNumericSiteId( connectedSite );
 
-				if ( ! localSite || hasConnectionErrors ) {
+				if ( ! localSite || hasConnectionErrors || ! wpcomRemoteSiteId ) {
 					continue;
 				}
 
 				const rawResponse = await client.req.get(
-					`/sites/${ connectedSite.id }/studio-app/sync/import`,
+					`/sites/${ wpcomRemoteSiteId }/studio-app/sync/import`,
 					{ apiNamespace: 'wpcom/v2' }
 				);
 				const response = importResponseSchema.parse( rawResponse );
@@ -972,6 +1172,7 @@ export const initializeSyncStatesThunk = createTypedAsyncThunk(
 							selectedSiteId: connectedSite.localSiteId,
 							remoteSiteId: connectedSite.id,
 							state: {
+								legacyRemoteSiteId: wpcomRemoteSiteId,
 								status,
 								selectedSite: localSite,
 								remoteSiteUrl: connectedSite.url,
@@ -1027,13 +1228,13 @@ export const syncOperationsSelectors = {
 	selectPushStates: ( state: { syncOperations: SyncOperationsState } ) =>
 		state.syncOperations.pushStates,
 	selectPullState:
-		( selectedSiteId: string, remoteSiteId: number ) =>
+		( selectedSiteId: string, remoteSiteId: string ) =>
 		( state: { syncOperations: SyncOperationsState } ): SyncBackupState | undefined => {
 			const stateId = generateStateId( selectedSiteId, remoteSiteId );
 			return state.syncOperations.pullStates[ stateId ] as SyncBackupState | undefined;
 		},
 	selectPushState:
-		( selectedSiteId: string, remoteSiteId: number ) =>
+		( selectedSiteId: string, remoteSiteId: string ) =>
 		( state: { syncOperations: SyncOperationsState } ): SyncPushState | undefined => {
 			const stateId = generateStateId( selectedSiteId, remoteSiteId );
 			return state.syncOperations.pushStates[ stateId ] as SyncPushState | undefined;
@@ -1044,7 +1245,7 @@ export const syncOperationsSelectors = {
 		);
 	},
 	selectIsSiteIdPulling:
-		( selectedSiteId: string, remoteSiteId?: number ) =>
+		( selectedSiteId: string, remoteSiteId?: string ) =>
 		( state: { syncOperations: SyncOperationsState } ): boolean => {
 			return Object.values( state.syncOperations.pullStates ).some( ( pullState ) => {
 				if ( ! pullState.selectedSite ) {
@@ -1065,7 +1266,7 @@ export const syncOperationsSelectors = {
 		);
 	},
 	selectIsSiteIdPushing:
-		( selectedSiteId: string, remoteSiteId?: number ) =>
+		( selectedSiteId: string, remoteSiteId?: string ) =>
 		( state: { syncOperations: SyncOperationsState } ): boolean => {
 			return Object.values( state.syncOperations.pushStates ).some( ( pushState ) => {
 				if ( ! pushState.selectedSite ) {

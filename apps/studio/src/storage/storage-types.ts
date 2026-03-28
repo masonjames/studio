@@ -1,6 +1,6 @@
 import { StatsMetric } from 'src/lib/bump-stats';
 import { SupportedEditor } from 'src/modules/user-settings/lib/editor';
-import type { SyncSite } from 'src/modules/sync/types';
+import type { RemoteProviderAccount, SyncSite } from 'src/modules/sync/types';
 import type { SupportedTerminal } from 'src/modules/user-settings/lib/terminal';
 
 export interface WindowBounds {
@@ -17,14 +17,16 @@ export interface AppdataSiteData {
 }
 
 export interface UserData {
-	version: 1;
+	version: 2;
 	siteMetadata: Record< string, AppdataSiteData >;
 	devToolsOpen?: boolean;
 	windowBounds?: WindowBounds;
 	onboardingCompleted?: boolean;
 	lastBumpStats?: Record< string, Partial< Record< StatsMetric, number > > >;
 	promptWindowsSpeedUpResult?: PromptWindowsSpeedUpResult;
+	connectedRemoteSites?: SyncSite[];
 	connectedWpcomSites?: { [ userId: number ]: SyncSite[] };
+	remoteProviderAccounts?: RemoteProviderAccount[];
 	sentryUserId?: string;
 	lastSeenVersion?: string;
 	preferredTerminal?: SupportedTerminal;
@@ -41,6 +43,8 @@ export interface PromptWindowsSpeedUpResult {
 }
 
 export const EMPTY_USER_DATA: UserData = {
-	version: 1,
+	version: 2,
 	siteMetadata: {},
+	connectedRemoteSites: [],
+	remoteProviderAccounts: [],
 };

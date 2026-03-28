@@ -6,7 +6,13 @@ import { reconcileConnectedSites } from 'src/modules/sync/lib/reconcile-connecte
 import { getSyncSupport, isPressableSite } from 'src/modules/sync/lib/sync-support';
 import { withOfflineCheck } from 'src/stores/utils/with-offline-check';
 import { getWpcomClient } from 'src/stores/wpcom-api';
-import type { SyncSite, SyncSupport } from 'src/modules/sync/types';
+import {
+	buildRemoteSiteKey,
+	getWpcomNumericSiteId,
+	isWpcomSyncSite,
+	type SyncSite,
+	type SyncSupport,
+} from 'src/modules/sync/types';
 
 // Schema for WordPress.com sites endpoint
 const sitesEndpointSiteSchema = z.object( {
@@ -61,8 +67,13 @@ function transformSingleSiteResponse(
 	syncSupport: SyncSupport,
 	isStaging: boolean
 ): SyncSite {
+	const canSync = syncSupport === 'syncable' || syncSupport === 'already-connected';
 	return {
-		id: site.ID,
+		id: buildRemoteSiteKey( 'wpcom', String( site.ID ) ),
+		remoteSiteId: String( site.ID ),
+		provider: 'wpcom',
+		providerLabel: 'WordPress.com',
+		legacyNumericId: site.ID,
 		localSiteId: '',
 		name: site.name,
 		url: site.URL,
@@ -70,6 +81,14 @@ function transformSingleSiteResponse(
 		isPressable: isPressableSite( site ),
 		environmentType: site.environment_type,
 		syncSupport,
+		capabilities: {
+			pull: canSync,
+			push: canSync,
+			backupCreate: canSync,
+			backupsRead: canSync,
+			importCreate: canSync,
+			restoreCreate: canSync,
+		},
 		lastPullTimestamp: null,
 		lastPushTimestamp: null,
 	};
@@ -138,7 +157,7 @@ export const wpcomSitesApi = createApi( {
 	tagTypes: [ 'WpComSites' ],
 	endpoints: ( builder ) => ( {
 		getSingleWpComSite: builder.query< SyncSite, { siteId: number; userId?: number } >( {
-			queryFn: async ( { siteId } ) => {
+			queryFn: async ( { siteId, userId } ) => {
 				const wpcomClient = getWpcomClient();
 				if ( ! wpcomClient ) {
 					return { error: { status: 401, data: 'Not authenticated' } };
@@ -158,7 +177,9 @@ export const wpcomSitesApi = createApi( {
 
 					const parsedSite = sitesEndpointSiteSchema.parse( response );
 
-					const allConnectedSites = await getIpcApi().getConnectedWpcomSites();
+					const allConnectedSites = ( await getIpcApi().getConnectedRemoteSites() ).filter(
+						isWpcomSyncSite
+					);
 
 					// Determine if staging by checking environment_type (can't access parent site's staging IDs without fetching /me/sites)
 					const isStaging =
@@ -167,10 +188,15 @@ export const wpcomSitesApi = createApi( {
 
 					const syncSupport = getSyncSupport(
 						parsedSite,
-						allConnectedSites.map( ( { id } ) => id )
+						allConnectedSites
+							.map( ( site ) => getWpcomNumericSiteId( site ) )
+							.filter( ( id ): id is number => typeof id === 'number' )
 					);
 
-					const syncSite = transformSingleSiteResponse( parsedSite, syncSupport, isStaging );
+					const syncSite = {
+						...transformSingleSiteResponse( parsedSite, syncSupport, isStaging ),
+						wpcomUserId: userId,
+					};
 
 					return { data: syncSite };
 				} catch ( error ) {
@@ -197,7 +223,7 @@ export const wpcomSitesApi = createApi( {
 				}
 
 				try {
-					const allConnectedSites = await getIpcApi().getConnectedWpcomSites();
+					const allConnectedSites = await getIpcApi().getConnectedRemoteSites();
 
 					const response = await wpcomClient.req.get(
 						{
@@ -214,21 +240,27 @@ export const wpcomSitesApi = createApi( {
 
 					const parsedResponse = sitesEndpointResponseSchema.parse( response );
 
+					const wpcomConnectedSites = allConnectedSites.filter( isWpcomSyncSite );
 					const syncSitesForReconciliation = transformSitesResponse(
 						parsedResponse.sites,
-						allConnectedSites.map( ( { id } ) => id )
+						wpcomConnectedSites
+							.map( ( site ) => getWpcomNumericSiteId( site ) )
+							.filter( ( id ): id is number => typeof id === 'number' )
 					);
 
 					const { updatedConnectedSites } = reconcileConnectedSites(
-						allConnectedSites,
+						wpcomConnectedSites,
 						syncSitesForReconciliation
 					);
-					await getIpcApi().updateConnectedWpcomSites( updatedConnectedSites );
+					await getIpcApi().updateConnectedRemoteSites( updatedConnectedSites );
 
 					const syncSitesForSelectedSite = transformSitesResponse(
 						parsedResponse.sites,
 						connectedSiteIds
-					);
+					).map( ( site ) => ( {
+						...site,
+						wpcomUserId: userId,
+					} ) );
 
 					return { data: syncSitesForSelectedSite };
 				} catch ( error ) {

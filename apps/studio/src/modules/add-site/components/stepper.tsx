@@ -13,12 +13,16 @@ interface StepperProps {
 	onBlueprintDeeplinkContinue?: () => void;
 	onBackupContinue?: () => void;
 	onPullRemoteContinue?: () => void;
+	onPullRemoteProviderSelectContinue?: () => void;
+	onPullRemoteProviderSiteContinue?: () => void;
 	onCreateSubmit?: ( event: FormEvent ) => void;
 	canSubmitBlueprint?: boolean;
 	canSubmitBlueprintDetails?: boolean;
 	canSubmitBlueprintDeeplink?: boolean;
 	canSubmitBackup?: boolean;
 	canSubmitPullRemote?: boolean;
+	canSubmitPullRemoteProviderSelect?: boolean;
+	canSubmitPullRemoteProviderSite?: boolean;
 	canSubmitCreate?: boolean;
 }
 
@@ -30,12 +34,16 @@ export default function Stepper( {
 	onBlueprintDeeplinkContinue,
 	onBackupContinue,
 	onPullRemoteContinue,
+	onPullRemoteProviderSelectContinue,
+	onPullRemoteProviderSiteContinue,
 	onCreateSubmit,
 	canSubmitBlueprint,
 	canSubmitBlueprintDetails,
 	canSubmitBlueprintDeeplink,
 	canSubmitBackup,
 	canSubmitPullRemote,
+	canSubmitPullRemoteProviderSelect,
+	canSubmitPullRemoteProviderSite,
 	canSubmitCreate,
 }: StepperProps ) {
 	const { __ } = useI18n();
@@ -45,12 +53,16 @@ export default function Stepper( {
 		onBlueprintDeeplinkContinue,
 		onBackupContinue,
 		onPullRemoteContinue,
+		onPullRemoteProviderSelectContinue,
+		onPullRemoteProviderSiteContinue,
 		onCreateSubmit,
 		canSubmitBlueprint,
 		canSubmitBlueprintDetails,
 		canSubmitBlueprintDeeplink,
 		canSubmitBackup,
 		canSubmitPullRemote,
+		canSubmitPullRemoteProviderSelect,
+		canSubmitPullRemoteProviderSite,
 		canSubmitCreate,
 	} );
 

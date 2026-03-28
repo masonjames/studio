@@ -20,7 +20,12 @@ import { exportBackup } from 'src/lib/import-export/export/export-manager';
 import { ExportOptions } from 'src/lib/import-export/export/types';
 import { getAuthenticationToken } from 'src/lib/oauth';
 import { keepSqliteIntegrationUpdated } from 'src/lib/sqlite-versions';
-import { SyncSite } from 'src/modules/sync/types';
+import {
+	buildRemoteSiteKey,
+	getWpcomNumericSiteId,
+	isWpcomSyncSite,
+	SyncSite,
+} from 'src/modules/sync/types';
 import { SiteServer } from 'src/site-server';
 import { loadUserData, lockAppdata, saveUserData, unlockAppdata } from 'src/storage/user-data';
 import { SyncOption } from 'src/types';
@@ -50,7 +55,7 @@ const SYNC_TUS_UPLOADS = new Map< string, UploadState >();
 export function pauseSyncUpload(
 	event: IpcMainInvokeEvent,
 	selectedSiteId: string,
-	remoteSiteId: number
+	remoteSiteId: string
 ) {
 	const uploadKey = `${ selectedSiteId }-${ remoteSiteId }`;
 	const uploadState = SYNC_TUS_UPLOADS.get( uploadKey );
@@ -78,7 +83,7 @@ export function pauseSyncUpload(
 export function resumeSyncUpload(
 	event: IpcMainInvokeEvent,
 	selectedSiteId: string,
-	remoteSiteId: number
+	remoteSiteId: string
 ) {
 	const uploadKey = `${ selectedSiteId }-${ remoteSiteId }`;
 	const uploadState = SYNC_TUS_UPLOADS.get( uploadKey );
@@ -208,10 +213,11 @@ export async function exportSiteForPush(
 export async function pushArchive(
 	event: IpcMainInvokeEvent,
 	selectedSiteId: string,
-	remoteSiteId: number,
+	remoteSiteId: string,
 	archivePath: string,
 	optionsToSync?: string[],
-	specificSelectionPaths?: string[]
+	specificSelectionPaths?: string[],
+	wpcomSiteId?: number
 ): Promise< { success: boolean; error?: string } > {
 	const token = await getAuthenticationToken();
 
@@ -221,6 +227,11 @@ export async function pushArchive(
 
 	let hasUploadStarted = false;
 	let isUploadingPaused = false;
+	const numericRemoteSiteId = wpcomSiteId ?? Number.parseInt( remoteSiteId, 10 );
+	if ( Number.isNaN( numericRemoteSiteId ) ) {
+		throw new Error( 'A numeric WordPress.com site ID is required for push operations.' );
+	}
+
 	const file = fs.createReadStream( archivePath );
 	const fileSize = fs.statSync( archivePath ).size;
 	const filename = path.basename( archivePath );
@@ -230,7 +241,7 @@ export async function pushArchive(
 
 	const attachmentPromise = new Promise< string >( ( resolve, reject ) => {
 		const upload = new Upload( file, {
-			endpoint: `https://public-api.wordpress.com/rest/v1.1/studio-file-uploads/${ remoteSiteId }`,
+			endpoint: `https://public-api.wordpress.com/rest/v1.1/studio-file-uploads/${ numericRemoteSiteId }`,
 			chunkSize: 500000,
 			retryDelays: [ 0, 1000, 3000, 5000, 10000, 25000 ],
 			overridePatchMethod: true,
@@ -361,7 +372,7 @@ export async function pushArchive(
 		formData.push( [ 'import_attachment_id', attachmentId ] );
 
 		await wpcom.req.post( {
-			path: `/sites/${ remoteSiteId }/studio-app/sync/import/initiate`,
+			path: `/sites/${ numericRemoteSiteId }/studio-app/sync/import/initiate`,
 			apiNamespace: 'wpcom/v2',
 			formData,
 		} );
@@ -384,14 +395,14 @@ export async function pushArchive(
 
 export async function downloadSyncBackup(
 	event: Electron.IpcMainInvokeEvent,
-	remoteSiteId: number,
+	remoteSiteId: string,
 	downloadUrl: string,
 	operationId: string
 ) {
 	const tmpDir = path.join( app.getPath( 'temp' ), 'wp-studio-backups' );
 	await fsPromises.mkdir( tmpDir, { recursive: true } );
 
-	const filePath = getSyncBackupTempPath( remoteSiteId );
+	const filePath = getSyncBackupTempPath( operationId );
 
 	const abortController = new AbortController();
 	SYNC_ABORT_CONTROLLERS.set( operationId, abortController );
@@ -400,6 +411,7 @@ export async function downloadSyncBackup(
 		await download( downloadUrl, filePath, false, '', abortController.signal );
 		return filePath;
 	} catch ( error ) {
+		await fsPromises.unlink( filePath ).catch( () => undefined );
 		if ( error instanceof Error && error.name === 'AbortError' ) {
 			// Download was cancelled, throw the error
 		} else {
@@ -411,145 +423,226 @@ export async function downloadSyncBackup(
 	}
 }
 
-export async function removeSyncBackup( event: IpcMainInvokeEvent, remoteSiteId: number ) {
-	const filePath = getSyncBackupTempPath( remoteSiteId );
+export async function removeSyncBackup( event: IpcMainInvokeEvent, operationId: string ) {
+	const filePath = getSyncBackupTempPath( operationId );
 	await fsPromises.unlink( filePath );
 }
 
+type RemoteSitesToConnect = { sites: SyncSite[]; localSiteId: string }[];
+type RemoteSitesToDisconnect = { siteIds: string[]; localSiteId: string }[];
 type WpcomSitesToConnect = { sites: SyncSite[]; localSiteId: string }[];
+type WpcomSitesToDisconnect = { siteIds: number[]; localSiteId: string }[];
 
-export async function connectWpcomSites( event: IpcMainInvokeEvent, list: WpcomSitesToConnect ) {
+function getDefaultWpcomCapabilities() {
+	return {
+		pull: true,
+		push: true,
+		backupCreate: true,
+		backupsRead: true,
+		importCreate: true,
+		restoreCreate: true,
+	};
+}
+
+function ensureWpcomSyncSite( site: SyncSite, currentUserId: number ): SyncSite {
+	const numericId = getWpcomNumericSiteId( site ) ?? Number.parseInt( String( site.id ), 10 );
+	const remoteSiteId = String( site.remoteSiteId ?? numericId );
+
+	return {
+		...site,
+		id: typeof site.id === 'string' ? site.id : buildRemoteSiteKey( 'wpcom', remoteSiteId ),
+		remoteSiteId,
+		provider: 'wpcom',
+		providerLabel: site.providerLabel || 'WordPress.com',
+		legacyNumericId: Number.isNaN( numericId ) ? undefined : numericId,
+		wpcomUserId: site.wpcomUserId ?? currentUserId,
+		capabilities: site.capabilities ?? getDefaultWpcomCapabilities(),
+	};
+}
+
+function mirrorLegacyWpcomSites(
+	userData: Awaited< ReturnType< typeof loadUserData > >,
+	fallbackUserId?: number
+) {
+	const wpcomSites = ( userData.connectedRemoteSites ?? [] ).filter( isWpcomSyncSite );
+	const groupedSites = wpcomSites.reduce< Record< number, SyncSite[] > >( ( acc, site ) => {
+		const userId = site.wpcomUserId ?? fallbackUserId;
+		if ( ! userId ) {
+			return acc;
+		}
+		acc[ userId ] = acc[ userId ] || [];
+		acc[ userId ].push( site );
+		return acc;
+	}, {} );
+
+	userData.connectedWpcomSites = groupedSites;
+}
+
+export async function connectRemoteSites( event: IpcMainInvokeEvent, list: RemoteSitesToConnect ) {
 	try {
 		await lockAppdata();
 		const currentUserId = await getCurrentUserId();
-
-		if ( ! currentUserId ) {
-			throw new Error( 'User not authenticated' );
-		}
-
 		const userData = await loadUserData();
-
-		userData.connectedWpcomSites = userData.connectedWpcomSites || {};
-		userData.connectedWpcomSites[ currentUserId ] =
-			userData.connectedWpcomSites[ currentUserId ] || [];
-
-		const connections = userData.connectedWpcomSites[ currentUserId ];
+		userData.connectedRemoteSites = userData.connectedRemoteSites || [];
+		const connections = userData.connectedRemoteSites;
 
 		list.forEach( ( { sites, localSiteId } ) => {
 			sites.forEach( ( siteToAdd ) => {
-				const isAlreadyConnected = connections.some(
-					( conn ) => conn.id === siteToAdd.id && conn.localSiteId === localSiteId
+				if ( isWpcomSyncSite( siteToAdd ) && ! currentUserId ) {
+					throw new Error( 'User not authenticated' );
+				}
+				const normalizedSite =
+					isWpcomSyncSite( siteToAdd ) && currentUserId
+						? ensureWpcomSyncSite( siteToAdd, currentUserId )
+						: siteToAdd;
+				const nextSite = {
+					...normalizedSite,
+					localSiteId,
+					syncSupport: 'already-connected' as const,
+				};
+				const existingIndex = connections.findIndex(
+					( conn ) => conn.id === nextSite.id && conn.localSiteId === localSiteId
 				);
 
-				// Add the site if it's not already connected
-				if ( ! isAlreadyConnected ) {
-					connections.push( {
-						...siteToAdd,
-						localSiteId,
-						syncSupport: 'already-connected',
-					} );
+				if ( existingIndex === -1 ) {
+					connections.push( nextSite );
+				} else {
+					connections[ existingIndex ] = {
+						...connections[ existingIndex ],
+						...nextSite,
+					};
 				}
 			} );
 		} );
 
+		mirrorLegacyWpcomSites( userData, currentUserId );
 		await saveUserData( userData );
 	} finally {
 		await unlockAppdata();
 	}
 }
 
-type WpcomSitesToDisconnect = { siteIds: number[]; localSiteId: string }[];
-
-export async function disconnectWpcomSites(
+export async function disconnectRemoteSites(
 	event: IpcMainInvokeEvent,
-	list: WpcomSitesToDisconnect
+	list: RemoteSitesToDisconnect
 ) {
 	try {
 		await lockAppdata();
 		const currentUserId = await getCurrentUserId();
-
-		if ( ! currentUserId ) {
-			throw new Error( 'User not authenticated' );
-		}
-
 		const userData = await loadUserData();
-
-		const connectedWpcomSites = userData.connectedWpcomSites;
-
-		// Totally unreal case, added it to help TS parse the code below. And if this error happens, we definitely have something wrong.
-		if ( ! Array.isArray( connectedWpcomSites?.[ currentUserId ] ) ) {
-			throw new Error(
-				'Something went wrong, since you are trying to disconnect something, but there are no stored connections yet'
-			);
-		}
+		userData.connectedRemoteSites = userData.connectedRemoteSites || [];
 
 		list.forEach( ( { siteIds, localSiteId } ) => {
-			const updatedConnections = connectedWpcomSites[ currentUserId ].filter(
+			userData.connectedRemoteSites = ( userData.connectedRemoteSites || [] ).filter(
 				( conn ) => ! ( siteIds.includes( conn.id ) && conn.localSiteId === localSiteId )
 			);
-
-			connectedWpcomSites[ currentUserId ] = updatedConnections;
 		} );
 
+		mirrorLegacyWpcomSites( userData, currentUserId );
 		await saveUserData( userData );
 	} finally {
 		await unlockAppdata();
 	}
 }
 
-export async function updateConnectedWpcomSites(
+export async function updateConnectedRemoteSites(
 	event: IpcMainInvokeEvent,
 	updatedSites: SyncSite[]
 ) {
 	try {
 		await lockAppdata();
 		const currentUserId = await getCurrentUserId();
-
-		if ( ! currentUserId ) {
-			throw new Error( 'User not authenticated' );
-		}
-
 		const userData = await loadUserData();
-
-		const connections = userData.connectedWpcomSites?.[ currentUserId ] || [];
-
-		if ( ! connections.length ) {
-			return;
-		}
+		userData.connectedRemoteSites = userData.connectedRemoteSites || [];
 
 		updatedSites.forEach( ( updatedSite ) => {
-			const index = connections.findIndex(
+			if ( isWpcomSyncSite( updatedSite ) && ! currentUserId ) {
+				throw new Error( 'User not authenticated' );
+			}
+			const index = userData.connectedRemoteSites!.findIndex(
 				( conn ) => conn.id === updatedSite.id && conn.localSiteId === updatedSite.localSiteId
 			);
 
 			if ( index !== -1 ) {
-				connections[ index ] = updatedSite;
+				const currentSite = userData.connectedRemoteSites![ index ];
+				userData.connectedRemoteSites![ index ] = {
+					...currentSite,
+					...updatedSite,
+					providerAccountId: updatedSite.providerAccountId ?? currentSite.providerAccountId,
+					lastPullTimestamp: updatedSite.lastPullTimestamp ?? currentSite.lastPullTimestamp,
+					lastPushTimestamp: updatedSite.lastPushTimestamp ?? currentSite.lastPushTimestamp,
+				};
 			}
 		} );
 
+		mirrorLegacyWpcomSites( userData, currentUserId );
 		await saveUserData( userData );
 	} finally {
 		await unlockAppdata();
 	}
 }
 
+export async function getConnectedRemoteSites(
+	event: IpcMainInvokeEvent,
+	localSiteId?: string
+): Promise< SyncSite[] > {
+	const userData = await loadUserData();
+	const allConnected = userData.connectedRemoteSites || [];
+
+	if ( localSiteId ) {
+		return allConnected.filter( ( site ) => site.localSiteId === localSiteId );
+	}
+
+	return allConnected;
+}
+
+export async function connectWpcomSites( event: IpcMainInvokeEvent, list: WpcomSitesToConnect ) {
+	const currentUserId = await getCurrentUserId();
+	if ( ! currentUserId ) {
+		throw new Error( 'User not authenticated' );
+	}
+
+	return connectRemoteSites(
+		event,
+		list.map( ( { sites, localSiteId } ) => ( {
+			localSiteId,
+			sites: sites.map( ( site ) => ensureWpcomSyncSite( site, currentUserId ) ),
+		} ) )
+	);
+}
+
+export async function disconnectWpcomSites(
+	event: IpcMainInvokeEvent,
+	list: WpcomSitesToDisconnect
+) {
+	return disconnectRemoteSites(
+		event,
+		list.map( ( { siteIds, localSiteId } ) => ( {
+			localSiteId,
+			siteIds: siteIds.map( ( siteId ) => buildRemoteSiteKey( 'wpcom', String( siteId ) ) ),
+		} ) )
+	);
+}
+
+export async function updateConnectedWpcomSites(
+	event: IpcMainInvokeEvent,
+	updatedSites: SyncSite[]
+) {
+	const currentUserId = await getCurrentUserId();
+	if ( ! currentUserId ) {
+		throw new Error( 'User not authenticated' );
+	}
+
+	return updateConnectedRemoteSites(
+		event,
+		updatedSites.map( ( site ) => ensureWpcomSyncSite( site, currentUserId ) )
+	);
+}
+
 export async function getConnectedWpcomSites(
 	event: IpcMainInvokeEvent,
 	localSiteId?: string
 ): Promise< SyncSite[] > {
-	const currentUserId = await getCurrentUserId();
-
-	if ( ! currentUserId ) {
-		return [];
-	}
-
-	const userData = await loadUserData();
-
-	const allConnected = userData.connectedWpcomSites?.[ currentUserId ] || [];
-
-	if ( localSiteId ) {
-		return allConnected.filter( ( site ) => site.localSiteId === localSiteId );
-	} else {
-		return allConnected;
-	}
+	const connectedSites = await getConnectedRemoteSites( event, localSiteId );
+	return connectedSites.filter( isWpcomSyncSite );
 }

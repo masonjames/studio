@@ -28,7 +28,8 @@ const api: IpcApi = {
 		remoteSiteId,
 		archivePath,
 		optionsToSync,
-		specificSelectionPaths
+		specificSelectionPaths,
+		wpcomRemoteSiteId
 	) =>
 		ipcRendererInvoke(
 			'pushArchive',
@@ -36,16 +37,37 @@ const api: IpcApi = {
 			remoteSiteId,
 			archivePath,
 			optionsToSync,
-			specificSelectionPaths
+			specificSelectionPaths,
+			wpcomRemoteSiteId
 		),
 	deleteSite: ( id, deleteFiles ) => ipcRendererInvoke( 'deleteSite', id, deleteFiles ),
 	copySite: ( sourceSiteId, newSiteId, siteName ) =>
 		ipcRendererInvoke( 'copySite', sourceSiteId, newSiteId, siteName ),
+	listRemoteProviderAccounts: ( provider ) =>
+		ipcRendererInvoke( 'listRemoteProviderAccounts', provider ),
+	testRemoteProviderAccount: ( input ) =>
+		ipcRendererInvoke( 'testRemoteProviderAccount', input ),
+	upsertRemoteProviderAccount: ( input ) =>
+		ipcRendererInvoke( 'upsertRemoteProviderAccount', input ),
+	deleteRemoteProviderAccount: ( accountId ) =>
+		ipcRendererInvoke( 'deleteRemoteProviderAccount', accountId ),
+	listRemoteProviderSites: ( accountId ) =>
+		ipcRendererInvoke( 'listRemoteProviderSites', accountId ),
+	startRemotePull: ( accountId, remoteSiteId ) =>
+		ipcRendererInvoke( 'startRemotePull', accountId, remoteSiteId ),
+	pollRemotePull: ( accountId, operation ) =>
+		ipcRendererInvoke( 'pollRemotePull', accountId, operation ),
+	downloadRemotePullArtifact: ( accountId, jobId, operationId ) =>
+		ipcRendererInvoke( 'downloadRemotePullArtifact', accountId, jobId, operationId ),
 	createSite: ( path, config ) => ipcRendererInvoke( 'createSite', path, config ),
 	updateSite: ( updatedSite, wpVersion ) =>
 		ipcRendererInvoke( 'updateSite', updatedSite, wpVersion ),
+	connectRemoteSites: ( ...args ) => ipcRendererInvoke( 'connectRemoteSites', ...args ),
 	connectWpcomSites: ( ...args ) => ipcRendererInvoke( 'connectWpcomSites', ...args ),
+	disconnectRemoteSites: ( ...args ) => ipcRendererInvoke( 'disconnectRemoteSites', ...args ),
 	disconnectWpcomSites: ( ...args ) => ipcRendererInvoke( 'disconnectWpcomSites', ...args ),
+	updateConnectedRemoteSites: ( ...args ) =>
+		ipcRendererInvoke( 'updateConnectedRemoteSites', ...args ),
 	updateConnectedWpcomSites: ( ...args ) =>
 		ipcRendererInvoke( 'updateConnectedWpcomSites', ...args ),
 	authenticate: ( isSignup ) => ipcRendererSend( 'authenticate', isSignup ),
@@ -124,7 +146,9 @@ const api: IpcApi = {
 	checkSyncBackupSize: ( downloadUrl ) => ipcRendererInvoke( 'checkSyncBackupSize', downloadUrl ),
 	downloadSyncBackup: ( remoteSiteId, downloadUrl, operationId ) =>
 		ipcRendererInvoke( 'downloadSyncBackup', remoteSiteId, downloadUrl, operationId ),
-	removeSyncBackup: ( remoteSiteId ) => ipcRendererInvoke( 'removeSyncBackup', remoteSiteId ),
+	removeSyncBackup: ( operationId ) => ipcRendererInvoke( 'removeSyncBackup', operationId ),
+	getConnectedRemoteSites: ( localSiteId ) =>
+		ipcRendererInvoke( 'getConnectedRemoteSites', localSiteId ),
 	getConnectedWpcomSites: ( localSiteId ) =>
 		ipcRendererInvoke( 'getConnectedWpcomSites', localSiteId ),
 	addSyncOperation: ( id, status ) => ipcRendererSend( 'addSyncOperation', id, status ),

@@ -27,7 +27,7 @@ import { useI18nLocale } from 'src/stores';
 import { useLatestRewindId, useRemoteFileTree, useLocalFileTree } from 'src/stores/sync';
 import { useGetWordPressVersions } from 'src/stores/wordpress-versions-api';
 import { TreeViewLoadingSkeleton } from './tree-view-loading-skeleton';
-import type { SyncSite } from 'src/modules/sync/types';
+import { getWpcomNumericSiteId, isWpcomSyncSite, type SyncSite } from 'src/modules/sync/types';
 
 type SyncDialogProps = {
 	type: 'push' | 'pull';
@@ -150,7 +150,13 @@ export function SyncDialog( {
 
 	const [ showAllFiles, setShowAllFiles ] = useState( false );
 	const [ treeState, setTreeState ] = useState< TreeNode[] >( defaultTree );
-	const isSubmitDisabled = treeState.every( ( node ) => ! node.checked && ! node.indeterminate );
+	const wpcomRemoteSiteId = type === 'pull' && isWpcomSyncSite( remoteSite )
+		? getWpcomNumericSiteId( remoteSite )
+		: undefined;
+	const supportsSelectivePull = type !== 'pull' || Boolean( wpcomRemoteSiteId );
+	const isFullSiteOnlyPull = type === 'pull' && ! supportsSelectivePull;
+	const isSubmitDisabled =
+		! isFullSiteOnlyPull && treeState.every( ( node ) => ! node.checked && ! node.indeterminate );
 	const {
 		isPushSelectionOverLimit,
 		isLoading: isSizeCheckLoading,
@@ -169,7 +175,7 @@ export function SyncDialog( {
 		isLoadingLocalFileTree,
 		localFileTreeError,
 		remoteFileTreeError,
-	} = useDynamicTreeState( type, localSite.id, remoteSite.id, setTreeState );
+	} = useDynamicTreeState( type, localSite.id, wpcomRemoteSiteId, setTreeState );
 
 	const [ wpVersion ] = useGetWpVersion( localSite );
 	const { data: wpVersions = [] } = useGetWordPressVersions( {
@@ -187,6 +193,18 @@ export function SyncDialog( {
 	const localSiteName = <SiteNameBox siteName={ localSite.name } envType="studio" />;
 	const remoteSiteName = <SiteNameBox siteName={ remoteSite.name } envType={ siteEnv } />;
 
+	useEffect( () => {
+		if ( type === 'pull' && ! supportsSelectivePull ) {
+			setShowAllFiles( false );
+			const fullSiteTree = updateNodeById(
+				updateNodeById( defaultTree, 'filesAndFolders', { checked: true, indeterminate: false } ),
+				'sqls',
+				{ checked: true, indeterminate: false }
+			);
+			setTreeState( fullSiteTree );
+		}
+	}, [ defaultTree, supportsSelectivePull, type ] );
+
 	let syncFrom, syncTo, syncFromText, syncToText, tooltipNoRewindId;
 	if ( type === 'push' ) {
 		syncFrom = localSiteName;
@@ -198,12 +216,14 @@ export function SyncDialog( {
 		syncTo = localSiteName;
 		syncFromText = remoteSite.name;
 		syncToText = localSite.name;
-		tooltipNoRewindId = createInterpolateElement(
-			__(
-				'Selecting individual items to pull will be enabled automatically once your first backup is complete.<br/>Wait a few minutes or run a full sync in the meantime.'
-			),
-			{ br: <br /> }
-		);
+		tooltipNoRewindId = supportsSelectivePull
+			? createInterpolateElement(
+					__(
+						'Selecting individual items to pull will be enabled automatically once your first backup is complete.<br/>Wait a few minutes or run a full sync in the meantime.'
+					),
+					{ br: <br /> }
+			  )
+			: undefined;
 	}
 
 	const handleExpanderChange = useCallback(
@@ -231,12 +251,12 @@ export function SyncDialog( {
 				return;
 			}
 
-			if ( type === 'pull' && rewindId && node.path && node.children?.length === 0 ) {
+			if ( type === 'pull' && wpcomRemoteSiteId && rewindId && node.path && node.children?.length === 0 ) {
 				// Set loading state for the node
 				setTreeState( ( prev ) => updateNodeById( prev, node.id, { loading: true } ) );
 
 				try {
-					const children = await fetchChildren( remoteSite.id, rewindId, node.path, node.checked );
+					const children = await fetchChildren( wpcomRemoteSiteId, rewindId, node.path, node.checked );
 					setTreeState( ( prev ) =>
 						updateNodeById( prev, node.id, { children, loading: false, hasError: false } )
 					);
@@ -252,12 +272,12 @@ export function SyncDialog( {
 			}
 			// For push operations, children are already loaded - no async fetching needed
 		},
-		[ type, rewindId, remoteSite.id, fetchChildren ]
+		[ type, rewindId, wpcomRemoteSiteId, fetchChildren ]
 	);
 
 	const handleSubmit = () => {
 		if ( type === 'pull' ) {
-			if ( ! rewindId ) {
+			if ( supportsSelectivePull && ! rewindId ) {
 				return;
 			}
 			onPull( treeState );
@@ -324,101 +344,111 @@ export function SyncDialog( {
 				>
 					{ syncTexts.subtitleSelector }
 				</Heading>
-				<Tooltip
-					className={ cx( 'w-full', isErrorRewindId && 'cursor-not-allowed' ) }
-					text={ tooltipNoRewindId }
-					disabled={ ! isErrorRewindId }
-				>
-					<div className="px-8 pb-2 relative">
-						{ type === 'pull' && isLoadingRewindId && <TreeViewLoadingSkeleton /> }
-						{ type === 'push' && isLoadingLocalFileTree && <TreeViewLoadingSkeleton /> }
-						{ ! isLoadingRewindId && ! isLoadingLocalFileTree && (
-							<>
-								<div className="absolute end-6 z-10 top-[6px]">
-									<SelectControl
-										value={ showAllFiles ? 'true' : 'false' }
-										variant="minimal"
-										options={ [
-											{
-												label: __( 'All files and folders' ),
-												value: 'false',
-											},
-											{
-												label: __( 'Specific files and folders' ),
-												value: 'true',
-											},
-										] }
-										onChange={ ( value ) => handleExpanderChange( value === 'true' ) }
-										disabled={ isErrorRewindId }
-										__next40pxDefaultSize
-										__nextHasNoMarginBottom
-										aria-label={ __( 'Select files and folders to sync' ) }
-										className="h-9 select-minimal"
-									/>
-								</div>
-								<TreeView
-									disabled={ isErrorRewindId }
-									tree={ treeState }
-									setTree={ setTreeState }
-									onExpand={ handleExpand }
-									renderAfterChildren={ ( nodeId ) => {
-										if ( nodeId === 'filesAndFolders' && showAllFiles && rewindId ) {
-											const backupUrl = `https://wordpress.com/backup/${ remoteSite.url.replace(
-												/^https?:\/\//,
-												''
-											) }`;
-											const backupDate = format( parseInt( rewindId ) * 1000, 'MMM d, y, h:mm a' );
-											return (
-												<div className="mt-2 pb-2 text-xs text-frame-text-secondary">
-													{ sprintf( __( 'Content from the latest backup: %s.' ), backupDate ) }{ ' ' }
-													<Button
-														variant="link"
-														className="p-0 h-auto text-xs"
-														onClick={ () => getIpcApi().openURL( backupUrl ) }
-													>
-														{ __( 'Create new backup ↗' ) }
-													</Button>
-												</div>
-											);
-										}
-										return null;
-									} }
-									renderEmptyContent={ ( nodeId, node ) => {
-										if ( nodeId === 'wp-content' && type === 'push' && localFileTreeError ) {
-											return (
-												<div className="text-frame-text-secondary italic">
-													{ __(
-														'Could not load files. Please close and reopen this dialog to try again.'
-													) }
-												</div>
-											);
-										}
-										if (
-											( nodeId === 'wp-content' && type === 'pull' && remoteFileTreeError ) ||
-											node.hasError
-										) {
-											return (
-												<div className="text-frame-text-secondary italic">
-													{ __(
-														'Error retrieving remote files and directories. Please close and reopen this dialog to try again.'
-													) }
-												</div>
-											);
-										}
-										return (
-											<div
-												className="text-frame-text-secondary italic"
-												aria-label={ __( 'Empty folder' ) }
-											>
-												{ __( 'Empty' ) }
-											</div>
-										);
-									} }
-								/>
-							</>
-						) }
+				{ isFullSiteOnlyPull ? (
+					<div className="px-8 pb-2">
+						<Notice status="info" isDismissible={ false }>
+							{ __(
+								'This provider currently supports full-site pulls only. Studio will import the latest available backup for files and database.'
+							) }
+						</Notice>
 					</div>
-				</Tooltip>
+				) : (
+					<Tooltip
+						className={ cx( 'w-full', isErrorRewindId && 'cursor-not-allowed' ) }
+						text={ tooltipNoRewindId }
+						disabled={ ! isErrorRewindId }
+					>
+						<div className="px-8 pb-2 relative">
+							{ type === 'pull' && isLoadingRewindId && <TreeViewLoadingSkeleton /> }
+							{ type === 'push' && isLoadingLocalFileTree && <TreeViewLoadingSkeleton /> }
+							{ ! isLoadingRewindId && ! isLoadingLocalFileTree && (
+								<>
+									<div className="absolute end-6 z-10 top-[6px]">
+										<SelectControl
+											value={ showAllFiles ? 'true' : 'false' }
+											variant="minimal"
+											options={ [
+												{
+													label: __( 'All files and folders' ),
+													value: 'false',
+												},
+												{
+													label: __( 'Specific files and folders' ),
+													value: 'true',
+												},
+											] }
+											onChange={ ( value ) => handleExpanderChange( value === 'true' ) }
+											disabled={ isErrorRewindId }
+											__next40pxDefaultSize
+											__nextHasNoMarginBottom
+											aria-label={ __( 'Select files and folders to sync' ) }
+											className="h-9 select-minimal"
+										/>
+									</div>
+									<TreeView
+										disabled={ isErrorRewindId }
+										tree={ treeState }
+										setTree={ setTreeState }
+										onExpand={ handleExpand }
+										renderAfterChildren={ ( nodeId ) => {
+											if ( nodeId === 'filesAndFolders' && showAllFiles && rewindId ) {
+												const backupUrl = `https://wordpress.com/backup/${ remoteSite.url.replace(
+													/^https?:\/\//,
+													''
+												) }`;
+												const backupDate = format( parseInt( rewindId ) * 1000, 'MMM d, y, h:mm a' );
+												return (
+													<div className="mt-2 pb-2 text-xs text-frame-text-secondary">
+														{ sprintf( __( 'Content from the latest backup: %s.' ), backupDate ) }{ ' ' }
+														<Button
+															variant="link"
+															className="p-0 h-auto text-xs"
+															onClick={ () => getIpcApi().openURL( backupUrl ) }
+														>
+															{ __( 'Create new backup ↗' ) }
+														</Button>
+													</div>
+												);
+											}
+											return null;
+										} }
+										renderEmptyContent={ ( nodeId, node ) => {
+											if ( nodeId === 'wp-content' && type === 'push' && localFileTreeError ) {
+												return (
+													<div className="text-frame-text-secondary italic">
+														{ __(
+															'Could not load files. Please close and reopen this dialog to try again.'
+														) }
+													</div>
+												);
+											}
+											if (
+												( nodeId === 'wp-content' && type === 'pull' && remoteFileTreeError ) ||
+												node.hasError
+											) {
+												return (
+													<div className="text-frame-text-secondary italic">
+														{ __(
+															'Error retrieving remote files and directories. Please close and reopen this dialog to try again.'
+														) }
+													</div>
+												);
+											}
+											return (
+												<div
+													className="text-frame-text-secondary italic"
+													aria-label={ __( 'Empty folder' ) }
+												>
+													{ __( 'Empty' ) }
+												</div>
+											);
+										} }
+									/>
+								</>
+							) }
+						</div>
+					</Tooltip>
+				)}
 
 				<div className="px-8 py-4 absolute left-0 right-0 bottom-0 bg-frame/[0.8] backdrop-blur-sm z-10 border-t border-frame-border">
 					{ type === 'push' && (
