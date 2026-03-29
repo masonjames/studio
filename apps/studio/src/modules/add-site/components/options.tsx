@@ -120,7 +120,7 @@ export default function AddSiteOptions( { onOptionSelect }: AddSiteOptionsProps 
 			<OptionButton
 				icon={ <Icon icon={ download } size={ 24 } fill="var(--color-frame-theme)" /> }
 				title={ __( 'Pull an existing site' ) }
-				description={ __( 'Download directly from WordPress.com or Pressable' ) }
+				description={ __( 'Download directly from WP.com or Pressable' ) }
 				onClick={ () => onOptionSelect( 'pullRemote' ) }
 				disabled={ isOffline }
 				disabledTooltip={ importOfflineMessage }

@@ -88,7 +88,7 @@ const config: ForgeConfig = {
 		new MakerZIP( {}, [ 'darwin' ] ),
 		new MakerDeb( {
 			options: {
-				genericName: 'WordPress Studio',
+				genericName: 'WP Studio',
 				categories: [ 'Utility' ],
 				name: 'studio',
 			},
@@ -101,7 +101,7 @@ const config: ForgeConfig = {
 				// Windows Explorer caches the icon agressively; use the cache busting param when necessary.
 				iconUrl:
 					process.env.STUDIO_WINDOWS_ICON_URL ||
-					'https://s0.wp.com/i/studio-app/studio-app-icon.ico?v=3',
+					'https://wpstudio.masonjames.com/studio-app-icon.ico',
 
 				setupExe: 'studio-setup.exe',
 
@@ -127,9 +127,9 @@ const config: ForgeConfig = {
 									x: 533,
 									y: 122,
 									type: 'file',
-									path: `${ process.cwd() }/out/Studio-darwin-${
+									path: `${ process.cwd() }/out/WP Studio-darwin-${
 										process.env.FILE_ARCHITECTURE || 'arm64'
-									}/Studio.app`,
+									}/WP Studio.app`,
 								},
 								{ x: 533, y: 354, type: 'link', path: '/Applications' },
 								{ x: 900, y: 900, type: 'position', path: '.background' },

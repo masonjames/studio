@@ -35,13 +35,11 @@ function SiteSyncDescription( { children }: PropsWithChildren ) {
 		<div className="p-8 flex justify-between max-w-3xl gap-4">
 			<div className="flex flex-col">
 				<div className="flex items-center mb-1">
-					<div className="a8c-subtitle text-pretty">
-						{ __( 'Sync with WordPress.com or Pressable' ) }
-					</div>
+					<div className="a8c-subtitle text-pretty">{ __( 'Sync with WP.com or Pressable' ) }</div>
 				</div>
 				<div className="max-w-[40ch] text-frame-text-secondary a8c-body">
 					{ __(
-						'Launch your existing WordPress.com or Jetpack-activated Pressable sites, or import an existing one. Then, share your work with the world.'
+						'Launch your existing WP.com or Jetpack-activated Pressable sites, or import an existing one. Then, share your work with the world.'
 					) }
 				</div>
 				<div className="mt-6">
@@ -86,7 +84,7 @@ function NoAuthSyncTab() {
 							authenticate();
 						} }
 					>
-						{ __( 'Log in to WordPress.com' ) }
+						{ __( 'Log in to WP.com' ) }
 						<ArrowIcon />
 					</Button>
 				</Tooltip>
@@ -99,7 +97,7 @@ function NoAuthSyncTab() {
 					placement="bottom-start"
 				>
 					<span>
-						{ __( 'New to WordPress.com?' ) }{ ' ' }
+						{ __( 'New to WP.com?' ) }{ ' ' }
 						<Button
 							aria-description={ isOffline ? offlineMessage : '' }
 							aria-disabled={ isOffline }

@@ -32,7 +32,7 @@ export async function runCommand(
 
 		const runningProcess = await isServerRunning( site.id );
 		if ( runningProcess ) {
-			logger.reportSuccess( __( 'WordPress server is already running' ) );
+			logger.reportSuccess( __( 'WP server is already running' ) );
 			if ( runningProcess.status === 'online' ) {
 				await updateSiteLatestCliPid( site.id, runningProcess.pid );
 			}
@@ -63,11 +63,11 @@ export async function runCommand(
 			);
 		}
 
-		logger.reportStart( LoggerAction.START_SITE, __( 'Starting WordPress server…' ) );
+		logger.reportStart( LoggerAction.START_SITE, __( 'Starting WP server…' ) );
 		try {
 			const processDesc = await startWordPressServer( site, logger );
 
-			logger.reportSuccess( __( 'WordPress server started' ) );
+			logger.reportSuccess( __( 'WP server started' ) );
 			if ( processDesc.status === 'online' ) {
 				await updateSiteLatestCliPid( site.id, processDesc.pid );
 			}
@@ -81,7 +81,7 @@ export async function runCommand(
 				await openSiteInBrowser( site );
 			}
 		} catch ( error ) {
-			throw new LoggerError( __( 'Failed to start WordPress server' ), error );
+			throw new LoggerError( __( 'Failed to start WP server' ), error );
 		}
 	} finally {
 		await disconnectFromDaemon();

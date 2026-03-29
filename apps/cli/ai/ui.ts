@@ -825,7 +825,7 @@ export class AiChatUI {
 			this.rebuildSitePickerList();
 			this.renderSitePicker();
 		} catch {
-			this.showSitePickerError( 'Failed to load WordPress.com sites. Please try again.' );
+			this.showSitePickerError( 'Failed to load WP.com sites. Please try again.' );
 		}
 	}
 
@@ -922,7 +922,7 @@ export class AiChatUI {
 
 		const isLocal = this.sitePickerTab === SITE_PICKER_TAB_LOCAL;
 		const localTab = isLocal ? chalk.bold( '[Local]' ) : chalk.dim( 'Local' );
-		const remoteTab = isLocal ? chalk.dim( 'WordPress.com' ) : chalk.bold( '[WordPress.com]' );
+		const remoteTab = isLocal ? chalk.dim( 'WP.com' ) : chalk.bold( '[WP.com]' );
 		const pad = ' ';
 		const header = `${ pad }${ localTab }  ${ remoteTab }`;
 
@@ -940,7 +940,7 @@ export class AiChatUI {
 		}
 
 		if ( ! isLocal && this.sitePickerRemoteLoading ) {
-			lines.push( chalk.dim( `${ pad }  Loading WordPress.com sites…` ) );
+			lines.push( chalk.dim( `${ pad }  Loading WP.com sites…` ) );
 		} else if ( this.sitePickerSelectList ) {
 			const termWidth = process.stdout.columns ?? 80;
 			lines.push(
@@ -960,7 +960,7 @@ export class AiChatUI {
 		const { announce = true, emitEvent = true } = options;
 		this._activeSite = site;
 		this.editor.activeSiteName = site.name;
-		const suffix = site.remote ? ' (WordPress.com)' : '';
+		const suffix = site.remote ? ' (WP.com)' : '';
 		const label = ` ✻ Selected site: ${ site.name }${ suffix }`;
 		if ( announce ) {
 			this.messages.addChild( new Text( `${ chalk.hex( '#5b8db8' )( label ) }\n`, 0, 0 ) );
@@ -1246,7 +1246,7 @@ export class AiChatUI {
 		].map( ( s ) => b( s ) );
 
 		const info = [
-			chalk.bold( 'WordPress Studio' ) + ( version ? chalk.dim( ` v${ version }` ) : '' ),
+			chalk.bold( 'WP Studio' ) + ( version ? chalk.dim( ` v${ version }` ) : '' ),
 			chalk.dim(
 				`${ AI_MODELS[ this.currentModel ] } · ${
 					AI_PROVIDERS[ this.currentProvider ]

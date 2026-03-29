@@ -7,7 +7,33 @@ fastlane_require 'aws-sdk-s3'
 fastlane_require 'json'
 fastlane_require 'net/http'
 fastlane_require 'uri'
+require 'fastlane/helper/s3_client_helper'
 require 'time'
+
+module Fastlane
+  module Helper
+    class S3ClientHelper
+      alias_method :studio_original_client, :client unless method_defined?(:studio_original_client)
+
+      private
+
+      def client
+        endpoint = ENV['STUDIO_MATCH_S3_ENDPOINT'].to_s.strip
+        return studio_original_client if endpoint.empty?
+        return @client if @client
+
+        @client = Aws::S3::Client.new(
+          {
+            region: region,
+            credentials: create_credentials,
+            endpoint: endpoint,
+            force_path_style: ENV.fetch('STUDIO_MATCH_S3_FORCE_PATH_STYLE', 'true') == 'true'
+          }.compact
+        )
+      end
+    end
+  end
+end
 
 UI.user_error!('Please run fastlane via `bundle exec`') unless FastlaneCore::Helper.bundler?
 
@@ -31,24 +57,25 @@ POT_FILE_PATH = File.join(PROJECT_ROOT_FOLDER, 'i18n', 'bundle-strings.pot')
 GLOTPRESS_PROJECT_URL = 'https://translate.wordpress.com/projects/studio'
 TRANSLATIONS_DIR = File.join(PROJECT_ROOT_FOLDER, 'tools', 'common', 'translations')
 
-APPLE_TEAM_ID = ENV.fetch('STUDIO_APPLE_TEAM_ID', 'PZYM8XX95Q')
-APPLE_BUNDLE_IDENTIFIER = ENV.fetch('STUDIO_APPLE_BUNDLE_IDENTIFIER', 'com.automattic.studio')
+APPLE_TEAM_ID = ENV.fetch('STUDIO_APPLE_TEAM_ID', 'J5K2J3K4H7')
+APPLE_BUNDLE_IDENTIFIER = ENV.fetch('STUDIO_APPLE_BUNDLE_IDENTIFIER', 'com.masonjames.studio')
 APPLE_API_KEY_PATH = ENV.fetch(
   'STUDIO_APPLE_API_KEY_PATH',
   File.join(SECRETS_FOLDER, 'app_store_connect_fastlane_api_key.json')
 )
-MATCH_S3_BUCKET = ENV.fetch('STUDIO_MATCH_S3_BUCKET', 'a8c-fastlane-match')
+MATCH_S3_BUCKET = ENV.fetch('STUDIO_MATCH_S3_BUCKET', 'studio-releases')
+MATCH_S3_OBJECT_PREFIX = ENV.fetch('STUDIO_MATCH_S3_OBJECT_PREFIX', 'signing')
 
-# Site ID for WordPress.com Studio in the Apps CDN
+# Site ID for WP.com Studio in the Apps CDN
 WPCOM_STUDIO_SITE_ID = ENV.fetch('STUDIO_WPCOM_STUDIO_SITE_ID', '239164481')
 
-GITHUB_REPO = ENV.fetch('STUDIO_GITHUB_REPO', 'Automattic/studio')
+GITHUB_REPO = ENV.fetch('STUDIO_GITHUB_REPO', 'masonjames/studio')
 MAIN_BRANCH = ENV.fetch('STUDIO_MAIN_BRANCH', 'trunk')
-BUILDKITE_ORG = ENV.fetch('STUDIO_BUILDKITE_ORG', 'automattic')
+BUILDKITE_ORG = ENV.fetch('STUDIO_BUILDKITE_ORG', 'mason-james')
 BUILDKITE_PIPELINE = ENV.fetch('STUDIO_BUILDKITE_PIPELINE', 'studio')
-RELEASE_STORAGE = ENV.fetch('STUDIO_RELEASE_STORAGE', 'appscdn')
-RELEASE_PRODUCT_NAME = ENV.fetch('STUDIO_RELEASE_PRODUCT_NAME', 'WordPress.com Studio')
-RELEASE_WEBSITE_URL = ENV.fetch('STUDIO_RELEASE_WEBSITE_URL', 'https://developer.wordpress.com/studio/')
+RELEASE_STORAGE = ENV.fetch('STUDIO_RELEASE_STORAGE', 'r2')
+RELEASE_PRODUCT_NAME = ENV.fetch('STUDIO_RELEASE_PRODUCT_NAME', 'WP Studio')
+RELEASE_WEBSITE_URL = ENV.fetch('STUDIO_RELEASE_WEBSITE_URL', 'https://wpstudio.masonjames.com')
 
 # Use this instead of getting values from ENV directly
 # It will throw an error if the requested value is missing
@@ -68,6 +95,68 @@ end
 def required_r2_env(key)
   UI.user_error!("Environment variable `#{key}` is not set.") unless ENV.key?(key)
   ENV.fetch(key)
+end
+
+def match_storage
+  ENV.fetch('STUDIO_MATCH_STORAGE', 's3')
+end
+
+def using_r2_match_storage?
+  match_storage == 'r2'
+end
+
+def match_bucket_name
+  ENV.fetch('STUDIO_MATCH_S3_BUCKET', using_r2_match_storage? ? required_r2_env('STUDIO_R2_BUCKET') : MATCH_S3_BUCKET)
+end
+
+def match_object_prefix
+  ENV.fetch('STUDIO_MATCH_S3_OBJECT_PREFIX', MATCH_S3_OBJECT_PREFIX)
+end
+
+def match_s3_endpoint
+  ENV.fetch('STUDIO_MATCH_S3_ENDPOINT', required_r2_env('STUDIO_R2_ENDPOINT'))
+end
+
+def match_s3_region
+  ENV.fetch('STUDIO_MATCH_S3_REGION', ENV.fetch('STUDIO_R2_REGION', 'auto'))
+end
+
+def match_s3_access_key
+  ENV.fetch('STUDIO_MATCH_S3_ACCESS_KEY_ID', required_r2_env('STUDIO_R2_ACCESS_KEY_ID'))
+end
+
+def match_s3_secret_access_key
+  ENV.fetch('STUDIO_MATCH_S3_SECRET_ACCESS_KEY', required_r2_env('STUDIO_R2_SECRET_ACCESS_KEY'))
+end
+
+def configure_r2_match_storage!
+  return unless using_r2_match_storage?
+
+  ENV['STUDIO_MATCH_S3_ENDPOINT'] = match_s3_endpoint
+  ENV['STUDIO_MATCH_S3_FORCE_PATH_STYLE'] = ENV.fetch('STUDIO_MATCH_S3_FORCE_PATH_STYLE', 'true')
+end
+
+def match_sync_code_signing_options
+  options = {
+    platform: 'macos',
+    app_identifier: APPLE_BUNDLE_IDENTIFIER,
+    team_id: APPLE_TEAM_ID,
+    type: 'developer_id',
+    storage_mode: 's3',
+    s3_bucket: match_bucket_name,
+    api_key_path: APPLE_API_KEY_PATH,
+    readonly: true
+  }
+
+  if using_r2_match_storage?
+    configure_r2_match_storage!
+    options[:s3_region] = match_s3_region
+    options[:s3_access_key] = match_s3_access_key
+    options[:s3_secret_access_key] = match_s3_secret_access_key
+    options[:s3_object_prefix] = match_object_prefix
+  end
+
+  options
 end
 
 def r2_bucket_name
@@ -119,12 +208,16 @@ def validate_release_configuration!
       STUDIO_R2_SECRET_ACCESS_KEY
       STUDIO_R2_PUBLIC_BASE_URL
     ].each { |key| required_r2_env(key) }
-    return
+  elsif !DRY_RUN
+    UI.user_error!('Environment variable WPCOM_API_TOKEN is not set') if ENV['WPCOM_API_TOKEN'].nil?
   end
 
-  return if DRY_RUN
+  return unless using_r2_match_storage? && !DRY_RUN
 
-  UI.user_error!('Environment variable WPCOM_API_TOKEN is not set') if ENV['WPCOM_API_TOKEN'].nil?
+  match_bucket_name
+  match_s3_endpoint
+  match_s3_access_key
+  match_s3_secret_access_key
 end
 
 validate_release_configuration!
@@ -141,16 +234,7 @@ lane :set_up_signing do |_options|
     next
   end
 
-  sync_code_signing(
-    platform: 'macos',
-    app_identifier: APPLE_BUNDLE_IDENTIFIER,
-    team_id: APPLE_TEAM_ID,
-    type: 'developer_id',
-    storage_mode: 's3',
-    s3_bucket: MATCH_S3_BUCKET,
-    api_key_path: APPLE_API_KEY_PATH,
-    readonly: true
-  )
+  sync_code_signing(**match_sync_code_signing_options)
 end
 
 desc 'Notarize the compiled binary'
@@ -160,7 +244,7 @@ lane :notarize_binary do
     next
   end
 
-  Dir[File.join(BUILDS_FOLDER, '**', 'Studio.app')].each do |path|
+  Dir[File.join(BUILDS_FOLDER, '**', "#{RELEASE_PRODUCT_NAME}.app")].each do |path|
     notarize(
       package: path,
       api_key_path: APPLE_API_KEY_PATH,
@@ -168,7 +252,7 @@ lane :notarize_binary do
     )
   end
 
-  Dir[File.join(BUILDS_FOLDER, '**', 'Studio-*.dmg')].each do |path|
+  Dir[File.join(BUILDS_FOLDER, '**', "#{RELEASE_PRODUCT_NAME}-*.dmg")].each do |path|
     notarize(
       bundle_id: APPLE_BUNDLE_IDENTIFIER,
       package: path,
@@ -954,7 +1038,7 @@ def create_draft_github_release(version:, release_tag:, builds:)
   body = notes
   unless links.empty?
     body += "\n\n---\nDownload Studio #{version}: #{links.join(', ')}\n\n" \
-            "The latest version is always available on the [WordPress Studio](#{RELEASE_WEBSITE_URL}) site."
+            "The latest version is always available on the [WP Studio](#{RELEASE_WEBSITE_URL}) site."
   end
 
   release_name = github_release_name(version:)

@@ -333,7 +333,7 @@ const UnauthenticatedView = ( { onAuthenticate }: { onAuthenticate: () => void }
 			{ __( 'Hold up!' ) }
 		</div>
 		<div className="mb-1">
-			{ __( 'You need to log in to your WordPress.com account to use the assistant.' ) }
+			{ __( 'You need to log in to your WP.com account to use the assistant.' ) }
 		</div>
 		<div className="mb-1">
 			{ createInterpolateElement(
@@ -350,7 +350,7 @@ const UnauthenticatedView = ( { onAuthenticate }: { onAuthenticate: () => void }
 			) }
 		</div>
 		<Button variant="primary" onClick={ onAuthenticate }>
-			{ __( 'Log in to WordPress.com' ) }
+			{ __( 'Log in to WP.com' ) }
 			<ArrowIcon />
 		</Button>
 	</ChatMessage>

@@ -64,8 +64,8 @@ export function openAboutWindow() {
 		if ( aboutWindow ) {
 			//When updating these strings, make sure to update the corresponding strings in the about-menu.html file
 			const versionText = escapeSingleQuotes( `${ packageJson } (${ getPlatformLabel() })` );
-			const studioByWpcomText = escapeSingleQuotes( __( 'WordPress Studio' ) );
-			const aboutStudioText = escapeSingleQuotes( __( 'About WordPress Studio' ) );
+			const studioByWpcomText = escapeSingleQuotes( __( 'WP Studio' ) );
+			const aboutStudioText = escapeSingleQuotes( __( 'About WP Studio' ) );
 			const shareFeedbackText = escapeSingleQuotes( __( 'Share Feedback' ) );
 			const releasesText = escapeSingleQuotes( __( 'Release Notes' ) );
 			const demoSitesText = escapeSingleQuotes( __( 'Preview sites powered by' ) );

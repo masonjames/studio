@@ -161,7 +161,7 @@ export function ContentTabSettings( { selectedSite }: ContentTabSettingsProps ) 
 							<span className="line-clamp-1 break-all">{ selectedSite.path }</span>
 						</CopyTextButton>
 					</SettingsRow>
-					<SettingsRow label={ __( 'WordPress version' ) }>{ wpVersion }</SettingsRow>
+					<SettingsRow label={ __( 'WP version' ) }>{ wpVersion }</SettingsRow>
 					<SettingsRow label={ __( 'PHP version' ) }>
 						<div className="flex">
 							<span className="line-clamp-1 break-all">{ selectedSite.phpVersion }</span>

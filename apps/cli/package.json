@@ -1,9 +1,9 @@
 {
 	"name": "wp-studio",
-	"author": "Automattic Inc.",
+	"author": "Mason James",
 	"version": "1.7.7",
 	"productName": "Studio CLI",
-	"description": "WordPress Studio CLI",
+	"description": "WP Studio CLI",
 	"license": "GPL-2.0-or-later",
 	"type": "module",
 	"bin": {
@@ -20,7 +20,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/Automattic/studio.git",
+		"url": "git+https://github.com/masonjames/studio.git",
 		"directory": "apps/cli"
 	},
 	"dependencies": {

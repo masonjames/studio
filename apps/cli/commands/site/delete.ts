@@ -76,9 +76,9 @@ export async function runCommand(
 
 		const runningProcess = await isServerRunning( site.id );
 		if ( runningProcess ) {
-			logger.reportStart( LoggerAction.STOP_SITE, __( 'Stopping WordPress server…' ) );
+			logger.reportStart( LoggerAction.STOP_SITE, __( 'Stopping WP server…' ) );
 			await stopWordPressServer( site.id );
-			logger.reportSuccess( __( 'WordPress server stopped' ) );
+			logger.reportSuccess( __( 'WP server stopped' ) );
 			await stopProxyIfNoSitesNeedIt( site.id, logger );
 		}
 

@@ -29,12 +29,12 @@ The branch model stays the same:
 
 ## What is replaced
 
-| Upstream piece | Fork replacement |
-| --- | --- |
-| ReleasesV2 milestone buttons | GitHub manual workflow + Buildkite `studio-release-dispatch` pipeline |
-| WordPress.com Apps CDN | Cloudflare R2 |
-| WordPress.com updater endpoint | fork-owned update service backed by R2 |
-| mandatory signing/notarization in CI | env-gated; can be skipped until credentials exist |
+| Upstream piece                       | Fork replacement                                                      |
+| ------------------------------------ | --------------------------------------------------------------------- |
+| ReleasesV2 milestone buttons         | GitHub manual workflow + Buildkite `studio-release-dispatch` pipeline |
+| WordPress.com Apps CDN               | Cloudflare R2                                                         |
+| WordPress.com updater endpoint       | fork-owned update service backed by R2                                |
+| mandatory signing/notarization in CI | env-gated; can be skipped until credentials exist                     |
 
 ## Current fork status
 
@@ -83,6 +83,7 @@ The bootstrap Buildkite pipeline files are:
 Create **two** pipelines in the `mason-james` Buildkite org:
 
 1. `studio`
+
    - repo: `masonjames/studio`
    - pipeline file: `.buildkite/bootstrap-ci.yml`
    - purpose: PR + trunk CI
@@ -163,13 +164,15 @@ When you are ready to enable signing, you will need at minimum:
 - `STUDIO_APPLE_TEAM_ID`
 - `STUDIO_APPLE_BUNDLE_IDENTIFIER`
 - `STUDIO_APPLE_API_KEY_PATH`
+- `STUDIO_MATCH_STORAGE`
 - `STUDIO_MATCH_S3_BUCKET`
 
 Notes:
 
 - upstream uses `~/.configure/studio/secrets/app_store_connect_fastlane_api_key.json`
 - upstream pulls Developer ID certs with `fastlane match` from S3 bucket `a8c-fastlane-match`
-- the fork can reuse the same mechanism, but with your own bucket / credentials
+- the fork can keep `fastlane match` on Cloudflare R2 by setting `STUDIO_MATCH_STORAGE=r2`
+- when using R2-backed match storage, keep signing assets under a separate prefix such as `signing/`
 
 ### 6. Windows signing
 
@@ -190,6 +193,78 @@ For the fork, choose one of these paths:
 1. keep that convention and provision the same secret name in your AWS account
 2. replace that helper with your own secret download path later
 
+## Exact GitHub + Buildkite env / secret matrix
+
+### GitHub repository settings (`masonjames/studio`)
+
+Secrets:
+
+- `BUILDKITE_API_ACCESS_TOKEN`
+  - Buildkite API token with permission to trigger builds
+
+Variables:
+
+- `BUILDKITE_RELEASE_PIPELINE=mason-james/studio-release-dispatch`
+
+### Buildkite shared environment (`studio` and `studio-release-dispatch`)
+
+Non-secret values:
+
+- `STUDIO_GITHUB_REPO=masonjames/studio`
+- `STUDIO_MAIN_BRANCH=trunk`
+- `STUDIO_BUILDKITE_ORG=mason-james`
+- `STUDIO_BUILDKITE_PIPELINE=studio`
+- `STUDIO_RELEASE_STORAGE=r2`
+- `STUDIO_R2_BUCKET=studio-releases`
+- `STUDIO_R2_ENDPOINT=https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com`
+- `STUDIO_R2_PUBLIC_BASE_URL=https://wpstudio.masonjames.com`
+- `STUDIO_RELEASE_PRODUCT_NAME=WP Studio`
+- `STUDIO_RELEASE_WEBSITE_URL=https://wpstudio.masonjames.com`
+- `STUDIO_WINDOWS_ICON_URL=https://wpstudio.masonjames.com/studio-app-icon.ico`
+- `STUDIO_SKIP_SIGNING=true` for the initial unsigned flow
+- `GITHUB_TOKEN`
+
+Secrets:
+
+- `STUDIO_R2_ACCESS_KEY_ID`
+- `STUDIO_R2_SECRET_ACCESS_KEY`
+
+Optional:
+
+- `SLACK_WEBHOOK`
+- `STUDIO_UPDATER_BASE_URL`
+- `STUDIO_AUTO_UPDATES_ENABLED=true`
+
+### Apple signing / notarization values
+
+Set these on macOS Buildkite agents when you are ready to turn signing on:
+
+- `STUDIO_SKIP_SIGNING=false`
+- `STUDIO_APPLE_TEAM_ID=J5K2J3K4H7`
+- `STUDIO_APPLE_BUNDLE_IDENTIFIER=com.masonjames.studio`
+- `STUDIO_APPLE_API_KEY_PATH=/Users/buildkite/.configure/studio/secrets/app_store_connect_fastlane_api_key.json`
+- `STUDIO_MATCH_STORAGE=r2`
+- `STUDIO_MATCH_S3_BUCKET=studio-releases`
+- `STUDIO_MATCH_S3_OBJECT_PREFIX=signing`
+- optional `STUDIO_MATCH_S3_ENDPOINT=https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com`
+- optional `STUDIO_MATCH_S3_ACCESS_KEY_ID` / `STUDIO_MATCH_S3_SECRET_ACCESS_KEY` if you want match storage credentials separate from release-storage credentials
+
+By default the fork will reuse the `STUDIO_R2_*` credentials for R2-backed match storage when the match-specific access key and secret are not set.
+
+### Windows signing / AppX values
+
+Set these on Windows Buildkite agents when you are ready to enable signed builds:
+
+- `STUDIO_SKIP_SIGNING=false`
+- `WINDOWS_CODE_SIGNING_CERT_PASSWORD`
+- `STUDIO_WINDOWS_PACKAGE_DISPLAY_NAME=WP Studio`
+- `STUDIO_WINDOWS_PUBLISHER_DISPLAY_NAME=Mason James`
+- `STUDIO_WINDOWS_IDENTITY_NAME=MasonJames.WPStudio`
+- `STUDIO_WINDOWS_STORE_PUBLISHER=CN=Mason James`
+- `STUDIO_WINDOWS_SIGNED_PUBLISHER=<exact X.509 subject from the Windows signing certificate>`
+
+The current Buildkite helper still expects a `certificate.pfx` file at repo root during the build.
+
 ## Buildkite environment checklist
 
 ### `studio` pipeline
@@ -197,11 +272,11 @@ For the fork, choose one of these paths:
 Recommended baseline:
 
 - `STUDIO_RELEASE_STORAGE=r2`
-- `STUDIO_R2_BUCKET`
-- `STUDIO_R2_ENDPOINT`
+- `STUDIO_R2_BUCKET=studio-releases`
+- `STUDIO_R2_ENDPOINT=https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com`
 - `STUDIO_R2_ACCESS_KEY_ID`
 - `STUDIO_R2_SECRET_ACCESS_KEY`
-- `STUDIO_R2_PUBLIC_BASE_URL`
+- `STUDIO_R2_PUBLIC_BASE_URL=https://wpstudio.masonjames.com`
 - `STUDIO_SKIP_SIGNING=true` (initially)
 - `GITHUB_TOKEN`
 
@@ -271,5 +346,5 @@ The replacement flow for the fork is:
 2. that triggers the Buildkite `studio-release-dispatch` pipeline
 3. that bootstraps the shared Buildkite variables and uploads `.buildkite/release-pipelines/manual-dispatch.yml`
 4. that uploads one of the existing release pipeline YAMLs
-4. that runs the existing Fastlane lane
-5. finalize/publish continue to create GitHub releases the same way as upstream
+5. that runs the existing Fastlane lane
+6. finalize/publish continue to create GitHub releases the same way as upstream

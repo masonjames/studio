@@ -28,7 +28,7 @@ function printInstallationInstructions(): void {
 
 	const lines = [
 		'',
-		__( 'WordPress Studio MCP Server' ),
+		__( 'WP Studio MCP Server' ),
 		'─'.repeat( 40 ),
 		'',
 		__( 'Run one of the following commands to add MCP support to your AI assistant:' ),

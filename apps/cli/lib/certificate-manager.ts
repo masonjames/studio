@@ -64,7 +64,7 @@ function createNameConstraintsExtension( domains: string[] ) {
 }
 
 // Certificate configuration
-const CA_NAME = 'WordPress Studio CA';
+const CA_NAME = 'WP Studio CA';
 const CA_CERT_VALIDITY_DAYS = 3650; // 10 years
 const SITE_CERT_VALIDITY_DAYS = 825; // a little over 2 years
 const CERT_DIRECTORY = getCertificatesPath();
@@ -106,7 +106,7 @@ export async function ensureRootCA(): Promise< { cert: string; key: string } > {
 	const attrs = [
 		{ name: 'commonName', value: CA_NAME },
 		{ name: 'countryName', value: 'US' },
-		{ name: 'organizationName', value: 'WordPress Studio' },
+		{ name: 'organizationName', value: 'WP Studio' },
 	];
 	cert.setSubject( attrs );
 	cert.setIssuer( attrs );
@@ -202,7 +202,7 @@ export async function trustRootCA(): Promise< void > {
 			await new Promise< void >( ( resolve, reject ) => {
 				sudo.exec(
 					`certutil -addstore -f "ROOT" "${ CA_CERT_PATH }"`,
-					{ name: 'WordPress Studio' },
+					{ name: 'WP Studio' },
 					( error ) => {
 						if ( error ) {
 							console.error( 'Error adding certificate to system trust store:', error );
@@ -258,7 +258,7 @@ export async function generateSiteCertificate(
 		const attrs = [
 			{ name: 'commonName', value: punycodeDomain },
 			{ name: 'countryName', value: 'US' },
-			{ name: 'organizationName', value: 'WordPress Studio' },
+			{ name: 'organizationName', value: 'WP Studio' },
 		];
 		cert.setSubject( attrs );
 		cert.setIssuer( caCertObj.subject.attributes );

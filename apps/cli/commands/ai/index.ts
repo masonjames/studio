@@ -214,7 +214,7 @@ export async function runCommand(
 		if ( token ) {
 			ui.setStatusMessage( `Logged in as ${ token.displayName }` );
 		} else {
-			ui.setStatusMessage( 'Use /login to authenticate to WordPress.com' );
+			ui.setStatusMessage( 'Use /login to authenticate to WP.com' );
 		}
 	}
 
@@ -266,7 +266,7 @@ export async function runCommand(
 		let enrichedPrompt = prompt;
 		const site = ui.activeSite;
 		if ( site?.remote && site?.url ) {
-			enrichedPrompt = `[Active site: "${ site.name }" at ${ site.url } (WordPress.com)]\n\n${ prompt }`;
+			enrichedPrompt = `[Active site: "${ site.name }" at ${ site.url } (WP.com)]\n\n${ prompt }`;
 		} else if ( site ) {
 			enrichedPrompt = `[Active site: "${ site.name }" at ${ site.path }${
 				site.running ? ' (running)' : ' (stopped)'
@@ -405,7 +405,7 @@ export async function runCommand(
 				ui.stop();
 				await runLogoutCommand();
 				ui.start();
-				ui.setStatusMessage( 'Logged out of WordPress.com' );
+				ui.setStatusMessage( 'Logged out of WP.com' );
 				await maybeAutoSwitchProvider();
 				continue;
 			}
@@ -484,7 +484,7 @@ export async function runCommand(
 export const registerCommand = ( yargs: StudioArgv ) => {
 	return yargs.command( {
 		command: '$0',
-		describe: __( 'AI-powered WordPress assistant' ),
+		describe: __( 'AI-powered WP assistant' ),
 		builder: ( yargs ) => {
 			return yargs
 				.option( 'path', {

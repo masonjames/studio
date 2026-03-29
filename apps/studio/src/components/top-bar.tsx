@@ -95,7 +95,7 @@ function Authentication() {
 		>
 			<Button
 				onClick={ () => getIpcApi().authenticate( false ) }
-				aria-label={ __( 'Log in to Studio with WordPress.com' ) }
+				aria-label={ __( 'Log in to Studio with WP.com' ) }
 				className="flex gap-x-2 justify-between w-full text-white rounded !px-2 !py-0 h-auto active:!text-white hover:!text-white hover:underline items-center"
 				disabled={ isOffline }
 			>

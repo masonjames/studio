@@ -637,9 +637,7 @@ const SyncConnectedSiteSection = ( {
 
 			const { response, checkboxChecked } = await getIpcApi().showMessageBox( {
 				message: disconnectMessage,
-				detail: __(
-					'Your WordPress.com site will not be affected by disconnecting it from Studio.'
-				),
+				detail: __( 'Your WP.com site will not be affected by disconnecting it from Studio.' ),
 				buttons: [ __( 'Disconnect' ), __( 'Cancel' ) ],
 				cancelId: CANCEL_BUTTON_INDEX,
 				checkboxLabel: __( "Don't ask again" ),

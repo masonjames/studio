@@ -257,13 +257,13 @@ export async function runCommand( sitePath: string, options: SetCommandOptions )
 		const wasRunning = await isServerRunning( site.id );
 
 		if ( needsRestart && wasRunning ) {
-			logger.reportStart( LoggerAction.STOP_SITE, __( 'Stopping WordPress server…' ) );
+			logger.reportStart( LoggerAction.STOP_SITE, __( 'Stopping WP server…' ) );
 			await stopWordPressServer( site.id );
-			logger.reportSuccess( __( 'WordPress server stopped' ) );
+			logger.reportSuccess( __( 'WP server stopped' ) );
 		}
 
 		if ( wpChanged ) {
-			logger.reportStart( LoggerAction.SET_WP_VERSION, __( 'Updating WordPress version…' ) );
+			logger.reportStart( LoggerAction.SET_WP_VERSION, __( 'Updating WP version…' ) );
 			const phpVersion = validatePhpVersion( site.phpVersion );
 			const zipUrl = getWordPressVersionUrl( wp );
 
@@ -279,9 +279,9 @@ export async function runCommand( sitePath: string, options: SetCommandOptions )
 			const exitCode = await response.exitCode;
 			if ( exitCode !== 0 ) {
 				exitPhp();
-				throw new LoggerError( sprintf( __( 'Failed to update WordPress version to %s' ), wp ) );
+				throw new LoggerError( sprintf( __( 'Failed to update WP version to %s' ), wp ) );
 			}
-			logger.reportSuccess( __( 'WordPress version updated' ) );
+			logger.reportSuccess( __( 'WP version updated' ) );
 
 			try {
 				await lockCliConfig();
@@ -304,12 +304,12 @@ export async function runCommand( sitePath: string, options: SetCommandOptions )
 				await setupCustomDomain( site, logger, { skipHostsUpdate: true } );
 			}
 
-			logger.reportStart( LoggerAction.START_SITE, __( 'Starting WordPress server…' ) );
+			logger.reportStart( LoggerAction.START_SITE, __( 'Starting WP server…' ) );
 			const processDesc = await startWordPressServer( site, logger );
 			if ( processDesc.status === 'online' ) {
 				await updateSiteLatestCliPid( site.id, processDesc.pid );
 			}
-			logger.reportSuccess( __( 'WordPress server started' ) );
+			logger.reportSuccess( __( 'WP server started' ) );
 		}
 
 		logger.reportSuccess( __( 'Site configuration updated' ) );
@@ -347,7 +347,7 @@ export const registerCommand = ( yargs: StudioArgv ) => {
 				} )
 				.option( 'wp', {
 					type: 'string',
-					description: __( 'WordPress version' ),
+					description: __( 'WP version' ),
 					coerce: ( value: string ) => {
 						if ( ! isValidWordPressVersion( value ) ) {
 							throw new ValidationError(

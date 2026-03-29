@@ -7,8 +7,7 @@ import packageJson from '../apps/studio/package.json' with { type: 'json' };
 console.log( '--- :electron: Packaging AppX' );
 
 const skipSigning = process.env.STUDIO_SKIP_SIGNING === 'true';
-const hasWindowsCodeSigning =
-	! skipSigning && !! process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD;
+const hasWindowsCodeSigning = ! skipSigning && !! process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD;
 
 if ( skipSigning ) {
 	console.log( '~~~ Skipping signed AppX output because STUDIO_SKIP_SIGNING=true' );
@@ -66,17 +65,14 @@ const normalizeWindowsVersion = ( version ) => {
 const appStoreVersion = normalizeWindowsVersion( packageJson.version );
 
 const appxName = packageJson.productName + '-appx';
-const packageDisplayName =
-	process.env.STUDIO_WINDOWS_PACKAGE_DISPLAY_NAME || 'WordPress Studio';
-const publisherDisplayName =
-	process.env.STUDIO_WINDOWS_PUBLISHER_DISPLAY_NAME || 'Automattic, Inc.';
-const identityName =
-	process.env.STUDIO_WINDOWS_IDENTITY_NAME || '22490Automattic.StudiobyWordPress.com';
-const unsignedPublisher =
-	process.env.STUDIO_WINDOWS_STORE_PUBLISHER || 'CN=E2E5A157-746D-4B04-9116-ABE5CB928306';
+const packageDisplayName = process.env.STUDIO_WINDOWS_PACKAGE_DISPLAY_NAME || 'WP Studio';
+const publisherDisplayName = process.env.STUDIO_WINDOWS_PUBLISHER_DISPLAY_NAME || 'Mason James';
+const identityName = process.env.STUDIO_WINDOWS_IDENTITY_NAME || 'MasonJames.WPStudio';
+const unsignedPublisher = process.env.STUDIO_WINDOWS_STORE_PUBLISHER || 'CN=Mason James';
 const signedPublisher =
 	process.env.STUDIO_WINDOWS_SIGNED_PUBLISHER ||
-	'CN=&quot;Automattic, Inc.&quot;, O=&quot;Automattic, Inc.&quot;, S=California, C=US';
+	process.env.STUDIO_WINDOWS_STORE_PUBLISHER ||
+	'CN=Mason James';
 
 async function addProtocolHandlerToManifest( manifestPath ) {
 	console.log( '~~~ Adding protocol handler to manifest...' );
@@ -92,7 +88,7 @@ async function addProtocolHandlerToManifest( manifestPath ) {
 	const protocolExtension = `      <Extensions>
         <uap:Extension Category="windows.protocol">
           <uap:Protocol Name="wp-studio">
-            <uap:DisplayName>WordPress.com Local Dev Protocol</uap:DisplayName>
+            <uap:DisplayName>WP.com Local Dev Protocol</uap:DisplayName>
           </uap:Protocol>
         </uap:Extension>
       </Extensions>`;
@@ -153,7 +149,7 @@ const sharedOptions = {
 	inputDirectory: path.resolve( outPath, `Studio-win32-${ architecture }` ),
 	packageVersion: appStoreVersion,
 	// Results in Id being invalid (might just be a matter of escaping, though)
-	// packageName: 'WordPress Studio',
+	// packageName: 'WP Studio',
 	packageName: 'Studio',
 	packageDescription: packageJson.description,
 	packageExecutable: `app/${ packageJson.productName }.exe`,

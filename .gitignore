@@ -102,6 +102,8 @@ vendor/*
 /fastlane/report.xml
 /fastlane/README.md
 /fastlane/github_release_notes.txt
+/certificate.pfx
+AuthKey_*.p8
 
 # CLI npm artifacts
 cli/vendor/
