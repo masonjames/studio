@@ -11,7 +11,7 @@ function isInstalledOnMacOs() {
 	return new Promise< boolean >( ( resolve, reject ) => {
 		execFile(
 			'mdfind',
-			[ "kMDItemCFBundleIdentifier == 'com.electron.studio'" ],
+			[ "kMDItemCFBundleIdentifier == 'com.masonjames.studio'" ],
 			( error, stdout ) => {
 				if ( error ) {
 					reject( error );

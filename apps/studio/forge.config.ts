@@ -33,6 +33,7 @@ const osxSignConfig = {
 
 const config: ForgeConfig = {
 	packagerConfig: {
+		appBundleId: 'com.masonjames.studio',
 		asar: true,
 		extraResource: [
 			path.join( __dirname, 'assets' ),

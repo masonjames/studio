@@ -10,28 +10,28 @@ fastlane_require 'uri'
 require 'fastlane/helper/s3_client_helper'
 require 'time'
 
-module Fastlane
-  module Helper
-    class S3ClientHelper
-      alias_method :studio_original_client, :client unless method_defined?(:studio_original_client)
+# Monkey-patch S3ClientHelper to support R2-compatible S3 endpoints.
+# Must use ::Fastlane to reopen the top-level module (fastlane evals
+# the Fastfile inside a FastFile instance binding, so bare `module Fastlane`
+# would create a nested module instead of reopening the existing one).
+::Fastlane::Helper::S3ClientHelper.class_eval do
+  alias_method :studio_original_client, :client unless method_defined?(:studio_original_client)
 
-      private
+  private
 
-      def client
-        endpoint = ENV['STUDIO_MATCH_S3_ENDPOINT'].to_s.strip
-        return studio_original_client if endpoint.empty?
-        return @client if @client
+  define_method(:client) do
+    endpoint = ENV['STUDIO_MATCH_S3_ENDPOINT'].to_s.strip
+    return studio_original_client if endpoint.empty?
+    return @client if @client
 
-        @client = Aws::S3::Client.new(
-          {
-            region: region,
-            credentials: create_credentials,
-            endpoint: endpoint,
-            force_path_style: ENV.fetch('STUDIO_MATCH_S3_FORCE_PATH_STYLE', 'true') == 'true'
-          }.compact
-        )
-      end
-    end
+    @client = Aws::S3::Client.new(
+      {
+        region: region,
+        credentials: create_credentials,
+        endpoint: endpoint,
+        force_path_style: ENV.fetch('STUDIO_MATCH_S3_FORCE_PATH_STYLE', 'true') == 'true'
+      }.compact
+    )
   end
 end
 
