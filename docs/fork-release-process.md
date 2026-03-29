@@ -34,26 +34,28 @@ The branch model stays the same:
 | ReleasesV2 milestone buttons         | GitHub manual workflow + Buildkite `studio-release-dispatch` pipeline |
 | WordPress.com Apps CDN               | Cloudflare R2                                                         |
 | WordPress.com updater endpoint       | fork-owned update service backed by R2                                |
-| mandatory signing/notarization in CI | env-gated; can be skipped until credentials exist                     |
+| Automattic signing identity          | `Developer ID Application: Mason James (J5K2J3K4H7)`                 |
+| `com.electron.studio` bundle ID     | `com.masonjames.studio`                                               |
 
 ## Current fork status
 
-The repo now supports an initial unsigned/manual-install release flow.
+### Fully working
 
-### Supported now
+- macOS signing with Developer ID Application: Mason James (J5K2J3K4H7)
+- macOS notarization via App Store Connect API key
+- macOS bundle identifier: `com.masonjames.studio`
+- Cloudflare R2 artifact storage and public URL resolution
+- Buildkite agent (self-hosted macOS, `queue=mac`)
+- Buildkite pipelines (`studio`, `studio-release-dispatch`)
+- Fastlane match on R2 for certificate storage
+- GitHub release creation via Fastlane lanes
+- All release branch lanes (`code_freeze` through `publish_release`)
 
-- Build release branches with the existing Fastlane lanes
-- Upload artifacts to Cloudflare R2
-- Create draft/published GitHub releases that link to fork-hosted artifacts
-- Disable auto-updates for forked packaged builds until a fork updater endpoint exists
-- Run unsigned macOS/Windows release builds by setting `STUDIO_SKIP_SIGNING=true`
+### Not yet provisioned
 
-### Not complete until external infra is provisioned
-
-- Apple Developer ID signing
-- Apple notarization
-- Windows code-signing certificate provisioning
-- fork updater service endpoint
+- Windows code-signing certificate
+- Windows Buildkite agent (`queue=windows`)
+- Fork updater service endpoint (auto-updates disabled for now)
 - Microsoft Store submission identity
 
 ## Required external services
@@ -64,6 +66,7 @@ Repository settings / secrets:
 
 - secret: `BUILDKITE_API_ACCESS_TOKEN`
   - Buildkite API token with `write_builds`
+  - 1Password: `buildkite-studio-api-token` in Platform Infra vault
 - variable: `BUILDKITE_RELEASE_PIPELINE`
   - recommended value: `mason-james/studio-release-dispatch`
 
@@ -80,7 +83,7 @@ The bootstrap Buildkite pipeline files are:
 
 ### 2. Buildkite
 
-Create **two** pipelines in the `mason-james` Buildkite org:
+Two pipelines in the `mason-james` Buildkite org:
 
 1. `studio`
 
@@ -93,26 +96,19 @@ Create **two** pipelines in the `mason-james` Buildkite org:
    - pipeline file: `.buildkite/bootstrap-release-dispatch.yml`
    - purpose: manual release entrypoint
 
-You need Buildkite agents/queues compatible with the repo YAML:
+Agent queues:
 
-- `mac`
-- `windows`
+- `mac` — self-hosted macOS agents (created, verified)
+- `windows` — Windows agents (not yet provisioned)
 
 ### 3. Cloudflare R2
 
-Provision:
+Provisioned and verified:
 
-- one R2 bucket for Studio release artifacts
-- one public/custom domain in front of that bucket
-
-Recommended env vars for Buildkite pipelines:
-
-- `STUDIO_RELEASE_STORAGE=r2`
-- `STUDIO_R2_BUCKET`
-- `STUDIO_R2_ENDPOINT`
-- `STUDIO_R2_ACCESS_KEY_ID`
-- `STUDIO_R2_SECRET_ACCESS_KEY`
-- `STUDIO_R2_PUBLIC_BASE_URL`
+- Bucket: `studio-releases`
+- Endpoint: `https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com`
+- Public URL: `https://wpstudio.masonjames.com`
+- 1Password: `studio-releases-r2-credentials` in Platform Infra vault
 
 The release upload code writes immutable artifacts under:
 
@@ -155,28 +151,37 @@ Until that exists, keep auto-updates disabled for fork releases.
 
 ### 5. Apple signing / notarization
 
-The repo now supports skipping signing with:
+**Status: Fully working.**
 
-- `STUDIO_SKIP_SIGNING=true`
+Verified artifacts:
 
-When you are ready to enable signing, you will need at minimum:
+- `codesign -dv` shows `Identifier=com.masonjames.studio`
+- `codesign -dv` shows `Authority=Developer ID Application: Mason James (J5K2J3K4H7)`
+- `spctl -a -vvv` shows `source=Notarized Developer ID`
 
-- `STUDIO_APPLE_TEAM_ID`
-- `STUDIO_APPLE_BUNDLE_IDENTIFIER`
-- `STUDIO_APPLE_API_KEY_PATH`
-- `STUDIO_MATCH_STORAGE`
-- `STUDIO_MATCH_S3_BUCKET`
+Configuration:
 
-Notes:
+| Env var | Value |
+|---------|-------|
+| `STUDIO_SKIP_SIGNING` | `false` |
+| `STUDIO_APPLE_TEAM_ID` | `J5K2J3K4H7` |
+| `STUDIO_APPLE_BUNDLE_IDENTIFIER` | `com.masonjames.studio` |
+| `STUDIO_APPLE_API_KEY_PATH` | `~/.configure/studio/secrets/app_store_connect_fastlane_api_key.json` |
+| `STUDIO_MATCH_STORAGE` | `r2` |
+| `STUDIO_MATCH_S3_BUCKET` | `studio-releases` |
+| `STUDIO_MATCH_S3_OBJECT_PREFIX` | `signing` |
+| `STUDIO_MATCH_S3_ENDPOINT` | `https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com` |
 
-- upstream uses `~/.configure/studio/secrets/app_store_connect_fastlane_api_key.json`
-- upstream pulls Developer ID certs with `fastlane match` from S3 bucket `a8c-fastlane-match`
-- the fork can keep `fastlane match` on Cloudflare R2 by setting `STUDIO_MATCH_STORAGE=r2`
-- when using R2-backed match storage, keep signing assets under a separate prefix such as `signing/`
+The match storage reuses the same R2 bucket and credentials as release storage (under a `signing/` prefix).
+
+Key file locations on macOS build agents:
+
+- API key JSON: `~/.configure/studio/secrets/app_store_connect_fastlane_api_key.json`
+- The `.p8` private key is embedded in the JSON; no separate AuthKey file needed at runtime
 
 ### 6. Windows signing
 
-The repo now supports unsigned Windows builds.
+The repo supports unsigned Windows builds.
 
 When you later enable Windows signing, you will need:
 
@@ -185,7 +190,7 @@ When you later enable Windows signing, you will need:
 
 Important upstream-specific dependency:
 
-- the current Buildkite helper `setup_windows_code_signing.ps1` comes from Automattic’s public CI toolkit plugin
+- the current Buildkite helper `setup_windows_code_signing.ps1` comes from Automattic's public CI toolkit plugin
 - that helper expects an AWS Secrets Manager secret named `windows-code-signing-certificate`
 
 For the fork, choose one of these paths:
@@ -201,6 +206,7 @@ Secrets:
 
 - `BUILDKITE_API_ACCESS_TOKEN`
   - Buildkite API token with permission to trigger builds
+  - 1Password: `buildkite-studio-api-token` in Platform Infra vault
 
 Variables:
 
@@ -221,13 +227,15 @@ Non-secret values:
 - `STUDIO_RELEASE_PRODUCT_NAME=WP Studio`
 - `STUDIO_RELEASE_WEBSITE_URL=https://wpstudio.masonjames.com`
 - `STUDIO_WINDOWS_ICON_URL=https://wpstudio.masonjames.com/studio-app-icon.ico`
-- `STUDIO_SKIP_SIGNING=true` for the initial unsigned flow
+- `STUDIO_SKIP_SIGNING=false`
 - `GITHUB_TOKEN`
 
 Secrets:
 
 - `STUDIO_R2_ACCESS_KEY_ID`
+  - 1Password: `studio-releases-r2-credentials` → username
 - `STUDIO_R2_SECRET_ACCESS_KEY`
+  - 1Password: `studio-releases-r2-credentials` → credential
 
 Optional:
 
@@ -237,19 +245,18 @@ Optional:
 
 ### Apple signing / notarization values
 
-Set these on macOS Buildkite agents when you are ready to turn signing on:
+Set on macOS Buildkite agents (already configured in `~/.buildkite-agent-studio.env`):
 
 - `STUDIO_SKIP_SIGNING=false`
 - `STUDIO_APPLE_TEAM_ID=J5K2J3K4H7`
 - `STUDIO_APPLE_BUNDLE_IDENTIFIER=com.masonjames.studio`
-- `STUDIO_APPLE_API_KEY_PATH=/Users/buildkite/.configure/studio/secrets/app_store_connect_fastlane_api_key.json`
+- `STUDIO_APPLE_API_KEY_PATH=~/.configure/studio/secrets/app_store_connect_fastlane_api_key.json`
 - `STUDIO_MATCH_STORAGE=r2`
 - `STUDIO_MATCH_S3_BUCKET=studio-releases`
 - `STUDIO_MATCH_S3_OBJECT_PREFIX=signing`
-- optional `STUDIO_MATCH_S3_ENDPOINT=https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com`
-- optional `STUDIO_MATCH_S3_ACCESS_KEY_ID` / `STUDIO_MATCH_S3_SECRET_ACCESS_KEY` if you want match storage credentials separate from release-storage credentials
-
-By default the fork will reuse the `STUDIO_R2_*` credentials for R2-backed match storage when the match-specific access key and secret are not set.
+- `STUDIO_MATCH_S3_ENDPOINT=https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com`
+- `STUDIO_MATCH_S3_ACCESS_KEY_ID` (reuses R2 credentials)
+- `STUDIO_MATCH_S3_SECRET_ACCESS_KEY` (reuses R2 credentials)
 
 ### Windows signing / AppX values
 
@@ -265,20 +272,77 @@ Set these on Windows Buildkite agents when you are ready to enable signed builds
 
 The current Buildkite helper still expects a `certificate.pfx` file at repo root during the build.
 
+## 1Password vault inventory
+
+All fork release secrets are stored in the **Platform Infra** vault (`cecouqf4ucde6ap376ffb4ggva`).
+
+| Item | Contents |
+|------|----------|
+| `studio-releases-r2-credentials` | R2 access key ID, secret access key, bucket name, endpoint, public URL |
+| `buildkite-studio-api-token` | Buildkite REST API token (`bkua_*`) for triggering builds |
+| `buildkite-studio-agent-token` | Buildkite agent registration token (`bkct_*`) for self-hosted agents |
+
+The Apple App Store Connect API key JSON is stored locally at `~/.configure/studio/secrets/app_store_connect_fastlane_api_key.json` on macOS build agents (not in 1Password — contains the embedded `.p8` private key).
+
+## Local macOS agent setup
+
+### Prerequisites
+
+- Homebrew
+- Ruby 3.2.2 via rbenv (`rbenv install 3.2.2`)
+- Node.js (version per `.node-version`)
+- Xcode Command Line Tools
+- Buildkite agent (`brew install buildkite-agent`)
+
+### Configuration files
+
+| File | Purpose |
+|------|---------|
+| `/opt/homebrew/etc/buildkite-agent/buildkite-agent.cfg` | Agent config — token, queue tags, build path |
+| `/opt/homebrew/etc/buildkite-agent/hooks/environment` | Sources `~/.buildkite-agent-studio.env` and sets PATH |
+| `~/.buildkite-agent-studio.env` | All Studio-specific env vars and secrets |
+| `~/.configure/studio/secrets/app_store_connect_fastlane_api_key.json` | Apple API key for notarization |
+
+### Agent tags
+
+```
+queue=mac,os=macos,arch=arm64,role=studio
+```
+
+### Starting the agent
+
+```bash
+# One-off:
+buildkite-agent start --config /opt/homebrew/etc/buildkite-agent/buildkite-agent.cfg
+
+# As a persistent service:
+brew services start buildkite-agent
+```
+
+### Ruby setup for Fastlane
+
+```bash
+rbenv install 3.2.2        # if not already installed
+cd /path/to/studio
+bundle install              # installs to vendor/bundle
+eval "$(rbenv init - zsh)"  # ensure rbenv shims are in PATH
+bundle exec fastlane <lane> # run any lane
+```
+
+The Buildkite hooks/environment file sets up PATH to include rbenv automatically.
+
 ## Buildkite environment checklist
 
 ### `studio` pipeline
 
-Recommended baseline:
-
 - `STUDIO_RELEASE_STORAGE=r2`
 - `STUDIO_R2_BUCKET=studio-releases`
 - `STUDIO_R2_ENDPOINT=https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com`
-- `STUDIO_R2_ACCESS_KEY_ID`
-- `STUDIO_R2_SECRET_ACCESS_KEY`
+- `STUDIO_R2_ACCESS_KEY_ID` (secret)
+- `STUDIO_R2_SECRET_ACCESS_KEY` (secret)
 - `STUDIO_R2_PUBLIC_BASE_URL=https://wpstudio.masonjames.com`
-- `STUDIO_SKIP_SIGNING=true` (initially)
-- `GITHUB_TOKEN`
+- `STUDIO_SKIP_SIGNING=false`
+- `GITHUB_TOKEN` (secret)
 
 Optional:
 
@@ -298,21 +362,31 @@ The manual release dispatcher requires these build env vars at trigger time:
 
 The GitHub `Release Dispatch` workflow sends these automatically.
 
-## First fork release
+## Running a release
 
-For the first release, use the minimal working configuration:
+### First beta release
 
-- `STUDIO_RELEASE_STORAGE=r2`
-- `STUDIO_SKIP_SIGNING=true`
-- no `STUDIO_UPDATER_BASE_URL` yet
-- no `STUDIO_AUTO_UPDATES_ENABLED` override
+```bash
+source ~/.buildkite-agent-studio.env
+eval "$(rbenv init - zsh)"
+bundle exec fastlane new_beta_release version:1.7.8-beta.1 skip_confirm:true
+```
 
-That gives you:
+### Via Buildkite (recommended for CI)
 
-- unsigned macOS artifacts
-- unsigned Windows artifacts
-- GitHub release with R2 download links
-- no auto-update polling in packaged fork builds
+Trigger the `studio-release-dispatch` pipeline with:
+
+- `RELEASE_ACTION=new_beta_release`
+- `RELEASE_VERSION=1.7.8-beta.1`
+
+Or use the GitHub `Release Dispatch` workflow from the Actions tab.
+
+### Full release flow
+
+1. `code_freeze` — creates `release/<version>` branch, extracts strings, generates notes
+2. `new_beta_release` — bumps version, builds, signs, notarizes, uploads to R2
+3. `finalize_release` — merges release branch, prepares final version
+4. `publish_release` — publishes the GitHub release, uploads final artifacts
 
 ## Recommended branch protection for `trunk`
 
@@ -336,9 +410,19 @@ Do **not** require by default:
 
 Do **not** apply the same protection to `release/*` branches, because the release lanes push version and translation commits directly to those branches.
 
+## Fastfile notes
+
+### S3ClientHelper monkey-patch
+
+The Fastfile monkey-patches `Fastlane::Helper::S3ClientHelper` to support R2's S3-compatible endpoint. This uses `class_eval` with `::Fastlane` (top-level constant) because fastlane evaluates the Fastfile inside a `FastFile` instance binding — bare `module Fastlane` would create a nested module instead of reopening the existing one.
+
+### Validate release configuration
+
+`validate_release_configuration!` runs at Fastfile load time (all lanes). When `STUDIO_RELEASE_STORAGE=r2`, it requires all `STUDIO_R2_*` env vars. Use `DRY_RUN=true` to bypass validation for lanes that don't need R2 credentials (e.g., local notarization testing).
+
 ## ReleasesV2 audit
 
-`https://releases.a8c.com/` is not usable as an external operator surface anymore; it currently redirects to Automattic’s public site. Treat ReleasesV2 as unavailable to the fork.
+`https://releases.a8c.com/` is not usable as an external operator surface anymore; it currently redirects to Automattic's public site. Treat ReleasesV2 as unavailable to the fork.
 
 The replacement flow for the fork is:
 
