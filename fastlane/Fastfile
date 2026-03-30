@@ -285,13 +285,20 @@ end
 #
 lane :generate_pot_file do |commit_message: nil, skip_confirm: false|
   pot_dir = File.join(PROJECT_ROOT_FOLDER, 'out', 'pots')
+  ignore_patterns = [
+    "#{PROJECT_ROOT_FOLDER}/apps/cli/node_modules/**/*",
+    "#{PROJECT_ROOT_FOLDER}/apps/cli/dist/**/*",
+    "#{PROJECT_ROOT_FOLDER}/apps/studio/dist/**/*",
+    "#{PROJECT_ROOT_FOLDER}/tools/common/dist/**/*",
+    '**/*.d.ts'
+  ].join(',')
 
   sh('rm', '-rf', pot_dir)
   sh('mkdir', '-p', File.dirname(POT_FILE_PATH))
   sh(
     'npx', 'wp-babel-makepot',
     "#{PROJECT_ROOT_FOLDER}/{apps/studio/src,apps/cli,tools/common}/**/*.{js,jsx,ts,tsx}",
-    '--ignore', "#{PROJECT_ROOT_FOLDER}/apps/cli/node_modules/**/*,**/*.d.ts",
+    '--ignore', ignore_patterns,
     '--base', PROJECT_ROOT_FOLDER,
     '--dir', pot_dir,
     '--output', POT_FILE_PATH
