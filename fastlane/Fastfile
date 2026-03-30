@@ -209,6 +209,26 @@ def release_product_name
   package_json_data['productName'] || RELEASE_PRODUCT_NAME
 end
 
+def release_integration_branches
+  ENV.fetch('STUDIO_RELEASE_INTEGRATION_BRANCHES', '')
+    .split(',')
+    .map(&:strip)
+    .reject(&:empty?)
+end
+
+def verify_release_integration_branches!(target_branch:)
+  release_integration_branches.each do |branch_name|
+    UI.user_error!("Required release integration branch `#{branch_name}` does not exist on origin.") unless Fastlane::Helper::GitHelper.branch_exists_on_remote?(branch_name: branch_name)
+
+    sh('git', 'fetch', 'origin', "#{branch_name}:refs/remotes/origin/#{branch_name}")
+    next if system('git', 'merge-base', '--is-ancestor', "origin/#{branch_name}", 'HEAD', out: File::NULL, err: File::NULL)
+
+    UI.user_error!(
+      "Required release integration branch `#{branch_name}` is not merged into `#{target_branch}`. Merge origin/#{branch_name} into #{target_branch} before running code_freeze."
+    )
+  end
+end
+
 def validate_distribution_configuration!
   UI.user_error!("Unsupported STUDIO_RELEASE_STORAGE `#{RELEASE_STORAGE}`. Expected `appscdn` or `r2`.") unless %w[appscdn r2].include?(RELEASE_STORAGE)
 
@@ -383,6 +403,7 @@ lane :code_freeze do |version:, skip_confirm: false, github_username: nil|
   UI.important <<~PROMPT
     Freezing code for release #{version}. This will:
     - Create or reuse the `#{branch_name}` branch
+    - Verify any configured `STUDIO_RELEASE_INTEGRATION_BRANCHES` are already merged into `#{MAIN_BRANCH}` before cutting a new release branch
     - Extract translatable strings and commit to `#{branch_name}`
     - Generate draft release notes from merged PRs
     - Create a backmerge PR from `#{branch_name}` to `#{MAIN_BRANCH}`
@@ -1071,6 +1092,7 @@ def ensure_code_freeze_branch(version:)
     branch_state = :existing
   else
     Fastlane::Helper::GitHelper.checkout_and_pull(MAIN_BRANCH)
+    verify_release_integration_branches!(target_branch: MAIN_BRANCH)
     Fastlane::Helper::GitHelper.create_branch(branch_name)
   end
 

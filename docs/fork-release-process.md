@@ -23,10 +23,14 @@ The fork still uses the same release lanes and release branch flow:
 - `publish_release`
 - `new_hotfix_release`
 
-The branch model stays the same:
+The fork now uses an integration branch model:
 
-- `trunk`
-- `release/<version>`
+- `upstream-trunk` — mirror of `Automattic/studio` `trunk`
+- `trunk` — the fork integration branch used for day-to-day work and release cuts
+- long-lived fork feature branches such as `add-external-provider-sync-flow` — merged into `trunk` intentionally when their changes should ship
+- `release/<version>` — release branches cut from `trunk`
+
+Release artifacts are always built from `release/<version>`, so any branding or external-provider work must be merged into `trunk` before the release branch is cut.
 
 ## What is replaced
 
@@ -343,6 +347,7 @@ Non-secret values:
 - `STUDIO_MATCH_S3_OBJECT_PREFIX=signing`
 - `STUDIO_MATCH_S3_ENDPOINT=https://92f5da74fcbbfb4e489277dcaa01658f.r2.cloudflarestorage.com`
 - `STUDIO_MATCH_S3_FORCE_PATH_STYLE=true`
+- `STUDIO_RELEASE_INTEGRATION_BRANCHES=add-external-provider-sync-flow`
 
 Secrets (in env file, sourced from 1Password):
 
@@ -482,10 +487,21 @@ Or use the GitHub `Release Dispatch` workflow from the Actions tab.
 
 ### Full release flow
 
-1. `code_freeze` — creates `release/<version>` branch, extracts strings, generates notes
+0. Sync `upstream-trunk` from `Automattic/studio`, merge it into fork `trunk`, then merge any fork feature branches listed in `STUDIO_RELEASE_INTEGRATION_BRANCHES` into `trunk`
+1. `code_freeze` — creates `release/<version>` branch, and now refuses to cut a new release branch if any configured integration branch tip is missing from `trunk`
 2. `new_beta_release` — bumps version, builds, signs, notarizes, uploads to R2
 3. `finalize_release` — merges release branch, prepares final version
 4. `publish_release` — publishes the GitHub release, uploads final artifacts
+
+### Repairing an already-cut release branch
+
+If a `release/<version>` branch was cut before a required fork feature branch landed in `trunk`, repair it in place:
+
+1. Merge the missing feature branch into `trunk`
+2. Merge `trunk` into `release/<version>`
+3. Run the next beta or finalization step from the repaired release branch
+
+Do not overwrite an already-published beta artifact path with different code. Ship a new beta (`beta2`, `beta3`, etc.) after repairing the branch instead.
 
 ## Buildkite environment checklist
 
