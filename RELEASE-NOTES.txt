@@ -3,7 +3,8 @@ Unreleased
 
 1.7.8
 =====
-❌ Error computing the list of PRs since v1.7.4: `POST https://api.github.com/repos/masonjames/studio/releases/generate-notes: 400 - Invalid previous_tag parameter // See: https://docs.github.com/rest/releases/releases#generate-release-notes-content-for-a-release`
+* Release notes could not be generated automatically for this fork release.
+* Review merged changes manually before publishing the final release.
 
 1.7.7
 =====
