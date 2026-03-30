@@ -8,8 +8,9 @@ steps:
   - label: ":package: New Beta Release"
     plugins: [$CI_TOOLKIT_PLUGIN, $NVM_PLUGIN]
     command: |
-      echo "--- :robot_face: Use bot for Git operations"
-      source use-bot-for-git
+      echo "--- :robot_face: Set up Git identity"
+      git config user.name "Studio Release Bot"
+      git config user.email "studio-bot@masonjames.com"
 
       .buildkite/commands/checkout-release-branch.sh "${RELEASE_VERSION}"
 

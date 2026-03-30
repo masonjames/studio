@@ -70,42 +70,43 @@ steps:
           - github_commit_status:
               context: All Mac Release Builds
 
-  - group: 📦 Build for Windows
-    key: release-windows
-    steps:
-      - label: 🔨 Windows Release Build - {{matrix}}
-        agents:
-          queue: windows
-        command: |
-          bash .buildkite/commands/checkout-release-branch.sh "${RELEASE_VERSION}"
-          powershell -File .buildkite/commands/build-for-windows.ps1 -BuildType release -Architecture {{matrix}}
-        artifact_paths:
-          - apps\studio\out\**\studio-setup.exe
-          - apps\studio\out\**\studio-update.nupkg
-          - apps\studio\out\**\RELEASES
-          - apps\studio\out\**\*.appx
-        plugins: [$CI_TOOLKIT_PLUGIN, $NVM_PLUGIN]
-        matrix:
-          - x64
-          - arm64
-        notify:
-          - github_commit_status:
-              context: All Windows Release Builds
+  # Windows builds are disabled until a Windows Buildkite agent and code-signing
+  # certificate are provisioned. Uncomment this group and add release-windows to
+  # the publish step's depends_on list when ready.
+  #
+  # - group: 📦 Build for Windows
+  #   key: release-windows
+  #   steps:
+  #     - label: 🔨 Windows Release Build - {{matrix}}
+  #       agents:
+  #         queue: windows
+  #       command: |
+  #         bash .buildkite/commands/checkout-release-branch.sh "${RELEASE_VERSION}"
+  #         powershell -File .buildkite/commands/build-for-windows.ps1 -BuildType release -Architecture {{matrix}}
+  #       artifact_paths:
+  #         - apps\studio\out\**\studio-setup.exe
+  #         - apps\studio\out\**\studio-update.nupkg
+  #         - apps\studio\out\**\RELEASES
+  #         - apps\studio\out\**\*.appx
+  #       plugins: [$CI_TOOLKIT_PLUGIN, $NVM_PLUGIN]
+  #       matrix:
+  #         - x64
+  #         - arm64
+  #       notify:
+  #         - github_commit_status:
+  #             context: All Windows Release Builds
 
   - label: ":rocket: Publish Release Builds"
     command: |
-      echo "--- :robot_face: Use bot for Git operations"
-      source use-bot-for-git
+      echo "--- :robot_face: Set up Git identity"
+      git config user.name "Studio Release Bot"
+      git config user.email "studio-bot@masonjames.com"
 
       .buildkite/commands/checkout-release-branch.sh "${RELEASE_VERSION}"
 
       echo "--- :node: Downloading Binaries"
       buildkite-agent artifact download "*.zip" .
       buildkite-agent artifact download "*.dmg" .
-      buildkite-agent artifact download "*.exe" .
-      buildkite-agent artifact download "*.appx" .
-      buildkite-agent artifact download "*.nupkg" .
-      buildkite-agent artifact download "*\\RELEASES" .
 
       .buildkite/commands/install-node-dependencies.sh
 
@@ -116,7 +117,6 @@ steps:
       queue: mac
     depends_on:
       - step: release-mac
-      - step: release-windows
     plugins: [$CI_TOOLKIT_PLUGIN, $NVM_PLUGIN]
     notify:
       - github_commit_status:

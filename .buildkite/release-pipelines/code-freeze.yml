@@ -8,8 +8,9 @@ steps:
   - label: ":snowflake: Code Freeze"
     plugins: [$CI_TOOLKIT_PLUGIN, $NVM_PLUGIN]
     command: |
-      echo "--- :robot_face: Use bot for Git operations"
-      source use-bot-for-git
+      echo "--- :robot_face: Set up Git identity"
+      git config user.name "Studio Release Bot"
+      git config user.email "studio-bot@masonjames.com"
 
       echo "--- :npm: Install Node dependencies"
       .buildkite/commands/install-node-dependencies.sh
