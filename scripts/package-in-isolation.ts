@@ -57,12 +57,23 @@ function shouldCopyToStaging( sourcePath: string ): boolean {
 	const relativePath = path.relative( REPO_ROOT, sourcePath );
 	if ( relativePath === '' ) return true;
 
-	const pathSegments = relativePath.split( path.sep );
+	const normalizedPath = relativePath.split( path.sep ).join( '/' );
+	const pathSegments = normalizedPath.split( '/' );
 	if ( pathSegments.includes( '.git' ) ) return false;
 	if ( pathSegments.includes( 'node_modules' ) ) return false;
 
-	const topLevelDir = pathSegments[ 0 ];
-	return topLevelDir !== 'out' && topLevelDir !== 'dist' && topLevelDir !== 'test-results';
+	const generatedPathPrefixes = [
+		'out/',
+		'dist/',
+		'test-results/',
+		'apps/cli/dist/',
+		'apps/studio/dist/',
+		'apps/studio/out/',
+		'tools/common/dist/',
+	];
+	return ! generatedPathPrefixes.some(
+		( prefix ) => normalizedPath === prefix.slice( 0, -1 ) || normalizedPath.startsWith( prefix )
+	);
 }
 
 function copyArtifactsBack( stagingRoot: string ) {
@@ -82,9 +93,10 @@ function copyArtifactsBack( stagingRoot: string ) {
 		if ( ! fs.existsSync( from ) ) continue;
 		fs.rmSync( to, { recursive: true, force: true } );
 		fs.mkdirSync( path.dirname( to ), { recursive: true } );
-		// Preserve framework symlinks in a form that remains valid after copying artifacts
-		// back from the temporary packaging directory to the real workspace.
-		fs.cpSync( from, to, { recursive: true, force: true, verbatimSymlinks: false } );
+		// Preserve framework symlinks exactly as generated in the isolated packaging directory.
+		// Resolving them during copy rewrites relative framework links into absolute paths,
+		// which invalidates the signed Electron app bundle.
+		fs.cpSync( from, to, { recursive: true, force: true, verbatimSymlinks: true } );
 	}
 }
 
