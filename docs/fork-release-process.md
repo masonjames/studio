@@ -460,11 +460,16 @@ spctl -a -vvv "apps/studio/out/WP Studio-darwin-arm64/WP Studio.app"
 ### First beta release
 
 ```bash
-source ~/.buildkite-agent-studio.env
 eval "$(rbenv init - zsh)"
+source ~/.buildkite-agent-studio.env
 bundle exec fastlane code_freeze version:1.7.8 skip_confirm:true
 bundle exec fastlane new_beta_release version:1.7.8 skip_confirm:true
 ```
+
+Notes:
+
+- `code_freeze` can be rerun on an existing pre-beta `release/<version>` branch; it refreshes the strings and release-notes draft instead of failing on branch creation.
+- If GitHub's generate-notes API cannot resolve the previous tag for this fork, Fastlane now writes a manual-review placeholder into `RELEASE-NOTES.txt` instead of committing the raw API error text.
 
 ### Via Buildkite (recommended for CI)
 
@@ -542,7 +547,11 @@ The Fastfile monkey-patches `Fastlane::Helper::S3ClientHelper` to support R2's S
 
 ### Validate release configuration
 
-`validate_release_configuration!` runs at Fastfile load time (all lanes). When `STUDIO_RELEASE_STORAGE=r2`, it requires all `STUDIO_R2_*` env vars. Use `DRY_RUN=true` to bypass validation for lanes that don't need R2 credentials (e.g., local notarization testing).
+Release validation is now scoped to the work being done:
+
+- distribution env validation runs only when Fastlane is about to upload artifacts
+- signing/match validation runs only when `set_up_signing` actually needs remote signing state
+- local `code_freeze` and `new_beta_release` no longer require the full R2 upload env unless the current machine is also performing the upload/signing work
 
 ### Platform-aware distribute_builds
 
@@ -606,5 +615,6 @@ The app name in build output uses the `productName` from package.json:
 
 - App: `apps/studio/out/WP Studio-darwin-arm64/WP Studio.app`
 - Zip: `apps/studio/out/make/zip/darwin/arm64/WP Studio-darwin-arm64-<version>.zip`
+- DMG: `apps/studio/out/WP Studio-darwin-arm64.dmg`
 
-Note: the Fastfile's `distribute_builds` references `Studio-darwin-*` paths (without "WP " prefix). If the product name doesn't match, uploads will fail with missing file errors. The `File.exist?` filter will catch this gracefully.
+The release publish step now downloads exactly these versioned macOS ZIP artifacts plus the top-level DMGs, and Fastlane resolves `WP Studio-*` paths from the package manifest instead of hardcoding `Studio-*` names.

@@ -61,7 +61,7 @@ steps:
           fi
         plugins: [$CI_TOOLKIT_PLUGIN, $NVM_PLUGIN]
         artifact_paths:
-          - apps/studio/out/**/*.app.zip
+          - apps/studio/out/make/zip/darwin/**/*.zip
           - apps/studio/out/*.dmg
         matrix:
           - x64
@@ -105,8 +105,14 @@ steps:
       .buildkite/commands/checkout-release-branch.sh "${RELEASE_VERSION}"
 
       echo "--- :node: Downloading Binaries"
-      buildkite-agent artifact download "*.zip" .
-      buildkite-agent artifact download "*.dmg" .
+      buildkite-agent artifact download "apps/studio/out/make/zip/darwin/**/*.zip" .
+      buildkite-agent artifact download "apps/studio/out/*.dmg" .
+
+      echo "--- :mag: Verifying downloaded macOS release artifacts"
+      find apps/studio/out/make/zip/darwin -type f -name '*-x64-*.zip' -print -quit | grep -q . || { echo 'Missing macOS x64 zip artifact'; exit 1; }
+      find apps/studio/out/make/zip/darwin -type f -name '*-arm64-*.zip' -print -quit | grep -q . || { echo 'Missing macOS arm64 zip artifact'; exit 1; }
+      find apps/studio/out -maxdepth 1 -type f -name '*-darwin-x64.dmg' -print -quit | grep -q . || { echo 'Missing macOS x64 DMG artifact'; exit 1; }
+      find apps/studio/out -maxdepth 1 -type f -name '*-darwin-arm64.dmg' -print -quit | grep -q . || { echo 'Missing macOS arm64 DMG artifact'; exit 1; }
 
       .buildkite/commands/install-node-dependencies.sh
 

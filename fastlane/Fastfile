@@ -197,7 +197,19 @@ def fork_release_environment
     .transform_values(&:to_s)
 end
 
-def validate_release_configuration!
+def package_json_data
+  @package_json_data ||= JSON.parse(File.read(PACKAGE_JSON_PATH))
+end
+
+def reset_package_json_data!
+  @package_json_data = nil
+end
+
+def release_product_name
+  package_json_data['productName'] || RELEASE_PRODUCT_NAME
+end
+
+def validate_distribution_configuration!
   UI.user_error!("Unsupported STUDIO_RELEASE_STORAGE `#{RELEASE_STORAGE}`. Expected `appscdn` or `r2`.") unless %w[appscdn r2].include?(RELEASE_STORAGE)
 
   if using_r2_release_storage? && !DRY_RUN
@@ -211,8 +223,11 @@ def validate_release_configuration!
   elsif !DRY_RUN
     UI.user_error!('Environment variable WPCOM_API_TOKEN is not set') if ENV['WPCOM_API_TOKEN'].nil?
   end
+end
 
-  return unless using_r2_match_storage? && !DRY_RUN
+def validate_signing_configuration!
+  return if skip_signing? || DRY_RUN
+  return unless using_r2_match_storage?
 
   match_bucket_name
   match_s3_endpoint
@@ -220,7 +235,6 @@ def validate_release_configuration!
   match_s3_secret_access_key
 end
 
-validate_release_configuration!
 UI.message("Running in #{DRY_RUN ? 'DRY RUN' : 'NORMAL'} mode")
 
 before_all do |_lane|
@@ -234,6 +248,7 @@ lane :set_up_signing do |_options|
     next
   end
 
+  validate_signing_configuration!
   sync_code_signing(**match_sync_code_signing_options)
 end
 
@@ -244,7 +259,7 @@ lane :notarize_binary do
     next
   end
 
-  Dir[File.join(BUILDS_FOLDER, '**', "#{RELEASE_PRODUCT_NAME}.app")].each do |path|
+  Dir[File.join(BUILDS_FOLDER, '**', "#{release_product_name}.app")].each do |path|
     notarize(
       package: path,
       api_key_path: APPLE_API_KEY_PATH,
@@ -252,7 +267,7 @@ lane :notarize_binary do
     )
   end
 
-  Dir[File.join(BUILDS_FOLDER, '**', "#{RELEASE_PRODUCT_NAME}-*.dmg")].each do |path|
+  Dir[File.join(BUILDS_FOLDER, '**', "#{release_product_name}-*.dmg")].each do |path|
     notarize(
       bundle_id: APPLE_BUNDLE_IDENTIFIER,
       package: path,
@@ -303,7 +318,7 @@ end
 #
 lane :distribute_release_build do |version: read_package_json_version|
   release_tag = "v#{version}"
-  builds = distribute_builds(release_tag:)
+  builds = distribute_builds(release_version: version, strict_required_artifacts: true)
 
   if DRY_RUN
     UI.message("[DRY RUN] Would notify Slack about #{release_tag}")
@@ -360,17 +375,14 @@ lane :code_freeze do |version:, skip_confirm: false, github_username: nil|
 
   UI.important <<~PROMPT
     Freezing code for release #{version}. This will:
-    - Create a new `#{branch_name}` branch from `#{MAIN_BRANCH}`
+    - Create or reuse the `#{branch_name}` branch
     - Extract translatable strings and commit to `#{branch_name}`
     - Generate draft release notes from merged PRs
     - Create a backmerge PR from `#{branch_name}` to `#{MAIN_BRANCH}`
   PROMPT
   next unless skip_confirm || UI.confirm('Continue?')
 
-  Fastlane::Helper::GitHelper.checkout_and_pull(MAIN_BRANCH)
-
-  # Create release branch from MAIN_BRANCH
-  Fastlane::Helper::GitHelper.create_branch(branch_name)
+  branch_info = ensure_code_freeze_branch(version:)
 
   generate_pot_file(
     commit_message: "[skip ci] Code freeze: Update translatable strings for #{version}",
@@ -391,7 +403,7 @@ lane :code_freeze do |version:, skip_confirm: false, github_username: nil|
   # Create backmerge PR so that the .pot strings file reaches trunk for GlotPress import
   create_backmerge_pr(source_branch: branch_name, github_username: github_username)
 
-  UI.success("Code freeze complete! Created #{branch_name}")
+  UI.success("Code freeze complete! #{branch_info[:branch_state] == :created ? 'Created' : 'Updated'} #{branch_name}")
 end
 
 # Create a new beta release on the current release branch.
@@ -608,41 +620,78 @@ def get_windows_update_release_sha(arch: 'x64')
   sha1
 end
 
+def resolve_mac_update_binary_path(arch:, release_version: nil)
+  preferred_paths = [
+    release_version && File.join(BUILDS_FOLDER, 'make', 'zip', 'darwin', arch, "#{release_product_name}-darwin-#{arch}-#{release_version}.zip"),
+    File.join(BUILDS_FOLDER, "#{release_product_name}-darwin-#{arch}", "#{release_product_name}.app.zip")
+  ].compact
+
+  preferred_paths.each do |path|
+    return path if File.exist?(path)
+  end
+
+  matches = Dir[File.join(BUILDS_FOLDER, 'make', 'zip', 'darwin', arch, "#{release_product_name}-darwin-#{arch}-*.zip")].sort
+  return nil if matches.empty?
+  return matches.first if matches.one? || release_version.nil?
+
+  UI.user_error!("Found multiple macOS zip artifacts for #{arch}: #{matches.join(', ')}")
+end
+
+def resolve_mac_dmg_binary_path(arch:)
+  dmg_path = File.join(BUILDS_FOLDER, "#{release_product_name}-darwin-#{arch}.dmg")
+  return dmg_path if File.exist?(dmg_path)
+
+  nil
+end
+
+def missing_required_builds(builds)
+  builds.filter_map do |_key, build|
+    next unless build[:required]
+    next if build[:binary_path] && File.exist?(build[:binary_path])
+
+    "#{build[:name]} (expected #{build[:binary_path] || 'artifact not found'})"
+  end
+end
+
 def distribute_builds(
   commit_hash: last_git_commit[:abbreviated_commit_hash],
   build_number: get_required_env('BUILDKITE_BUILD_NUMBER'),
-  release_tag: nil
+  release_version: nil,
+  strict_required_artifacts: false
 )
-  build_type = if release_tag.nil?
+  version = release_version&.delete_prefix('v') || read_package_json_version
+  release_tag = "v#{version}"
+  build_type = if release_version.nil?
                  'Nightly'
-               elsif release_tag.downcase.include?('beta')
+               elsif version.downcase.include?('beta')
                  'Beta'
                else
                  'Production'
                end
-  version = release_tag.nil? ? "v#{read_package_json_version}" : release_tag
   appx_version = "#{version[/\d+\.\d+\.\d+/]}.0"
-  release_notes = release_tag.nil? ? "Development build #{version}-#{build_number}" : "Release #{release_tag}"
+  release_notes = release_version.nil? ? "Development build #{release_tag}-#{build_number}" : "Release #{release_tag}"
 
   # macOS builds (always present)
   update_builds = {
     x64: {
-      binary_path: File.join(BUILDS_FOLDER, 'Studio-darwin-x64', 'Studio.app.zip'),
+      binary_path: resolve_mac_update_binary_path(arch: 'x64', release_version: release_version),
       name: 'Mac Intel',
       platform: 'Mac - Intel',
       storage_platform: 'darwin',
       arch: 'x64',
       install_type: 'Update',
-      sha: commit_hash
+      sha: commit_hash,
+      required: strict_required_artifacts
     },
     arm64: {
-      binary_path: File.join(BUILDS_FOLDER, 'Studio-darwin-arm64', 'Studio.app.zip'),
+      binary_path: resolve_mac_update_binary_path(arch: 'arm64', release_version: release_version),
       name: 'Mac Apple Silicon',
       platform: 'Mac - Silicon',
       storage_platform: 'darwin',
       arch: 'arm64',
       install_type: 'Update',
-      sha: commit_hash
+      sha: commit_hash,
+      required: strict_required_artifacts
     }
   }
 
@@ -658,7 +707,8 @@ def distribute_builds(
       storage_platform: 'win32',
       arch: 'x64',
       install_type: 'Update',
-      sha: get_windows_update_release_sha(arch: 'x64')
+      sha: get_windows_update_release_sha(arch: 'x64'),
+      required: false
     }
   end
 
@@ -670,27 +720,30 @@ def distribute_builds(
       storage_platform: 'win32',
       arch: 'arm64',
       install_type: 'Update',
-      sha: get_windows_update_release_sha(arch: 'arm64')
+      sha: get_windows_update_release_sha(arch: 'arm64'),
+      required: false
     }
   end
 
   # macOS full install builds (always present for releases)
-  full_install_builds = {
+  full_install_builds = release_version.nil? ? {} : {
     x64_dmg: {
-      binary_path: File.join(BUILDS_FOLDER, 'Studio-darwin-x64.dmg'),
+      binary_path: resolve_mac_dmg_binary_path(arch: 'x64'),
       name: 'Mac Intel (DMG)',
       platform: 'Mac - Intel',
       storage_platform: 'darwin',
       arch: 'x64',
-      install_type: 'Full Install'
+      install_type: 'Full Install',
+      required: strict_required_artifacts
     },
     arm64_dmg: {
-      binary_path: File.join(BUILDS_FOLDER, 'Studio-darwin-arm64.dmg'),
+      binary_path: resolve_mac_dmg_binary_path(arch: 'arm64'),
       name: 'Mac Apple Silicon (DMG)',
       platform: 'Mac - Silicon',
       storage_platform: 'darwin',
       arch: 'arm64',
-      install_type: 'Full Install'
+      install_type: 'Full Install',
+      required: strict_required_artifacts
     }
   }
 
@@ -707,7 +760,8 @@ def distribute_builds(
       platform: 'Windows - x64',
       storage_platform: 'win32',
       arch: 'x64',
-      install_type: 'Full Install'
+      install_type: 'Full Install',
+      required: false
     }
   end
 
@@ -718,7 +772,8 @@ def distribute_builds(
       platform: 'Windows - ARM64',
       storage_platform: 'win32',
       arch: 'arm64',
-      install_type: 'Full Install'
+      install_type: 'Full Install',
+      required: false
     }
   end
 
@@ -729,7 +784,8 @@ def distribute_builds(
       platform: 'Microsoft Store - x64',
       storage_platform: 'microsoft-store',
       arch: 'x64',
-      install_type: 'Full Install'
+      install_type: 'Full Install',
+      required: false
     }
   end
 
@@ -740,19 +796,27 @@ def distribute_builds(
       platform: 'Microsoft Store - ARM64',
       storage_platform: 'microsoft-store',
       arch: 'arm64',
-      install_type: 'Full Install'
+      install_type: 'Full Install',
+      required: false
     }
   end
 
-  builds_to_upload = release_tag.nil? ? update_builds : { **update_builds, **full_install_builds }
+  builds_to_upload = release_version.nil? ? update_builds : { **update_builds, **full_install_builds }
+  missing_artifacts = missing_required_builds(builds_to_upload)
+  unless missing_artifacts.empty?
+    UI.user_error!("Missing required release artifacts:
+- #{missing_artifacts.join("\n- ")}")
+  end
+
   # Filter out builds whose binary file doesn't exist (e.g., Windows builds
   # when running macOS-only, or a single-arch build).
-  builds_to_upload = builds_to_upload.select { |_key, build| File.exist?(build[:binary_path]) }
+  builds_to_upload = builds_to_upload.select { |_key, build| build[:binary_path] && File.exist?(build[:binary_path]) }
   UI.user_error!('No build artifacts found to upload. Did the build step succeed?') if builds_to_upload.empty?
 
-  UI.message("Uploading #{builds_to_upload.count} builds (#{release_tag.nil? ? 'dev: updates only' : 'release: all builds'})")
+  validate_distribution_configuration!
+  UI.message("Uploading #{builds_to_upload.count} builds (#{release_version.nil? ? 'dev: updates only' : 'release: all builds'})")
 
-  channel = release_channel(version: release_tag)
+  channel = release_channel(version: release_version)
   published_at = Time.now.utc.iso8601
 
   builds_to_upload.each_value do |build|
@@ -767,7 +831,7 @@ def distribute_builds(
              else
                upload_file_to_apps_cdn(
                  site_id: WPCOM_STUDIO_SITE_ID,
-                 product: RELEASE_PRODUCT_NAME,
+                 product: release_product_name,
                  file_path: build[:binary_path],
                  platform: build[:platform],
                  arch: build[:arch],
@@ -787,7 +851,7 @@ def distribute_builds(
     next unless using_r2_release_storage? && build[:install_type] == 'Update'
 
     metadata = {
-      version: version.delete_prefix('v'),
+      version: version,
       channel: channel,
       name: build[:name],
       notes: release_notes,
@@ -817,8 +881,11 @@ def distribute_builds(
 end
 
 # Create unique filenames using the current version and the architecture.
-def create_versioned_file(original_file_path:, version:, arch:)
-  original_filename = File.basename(original_file_path)
+def prepare_artifact_for_upload(file_path:, version:, arch:)
+  normalized_version = version.delete_prefix('v')
+  original_filename = File.basename(file_path)
+  return file_path if original_filename.include?(normalized_version)
+
   if original_filename.match(/\.app\.zip$/i)
     original_filename = original_filename.gsub(/\.app\.zip$/i, '')
     extension = '.zip'
@@ -831,14 +898,14 @@ def create_versioned_file(original_file_path:, version:, arch:)
   base_name = File.basename(original_filename, extension)
 
   versioned_filename = if base_name.match(/-#{arch}/i)
-                         "#{base_name}-#{version}#{extension}"
+                         "#{base_name}-#{normalized_version}#{extension}"
                        else
-                         "#{base_name}-#{arch}-#{version}#{extension}"
+                         "#{base_name}-#{arch}-#{normalized_version}#{extension}"
                        end
 
-  versioned_file_path = File.join(File.dirname(original_file_path), versioned_filename)
-  UI.message("Copying #{original_file_path} to #{versioned_file_path}")
-  FileUtils.cp(original_file_path, versioned_file_path)
+  versioned_file_path = File.join(File.dirname(file_path), versioned_filename)
+  UI.message("Copying #{file_path} to #{versioned_file_path}")
+  FileUtils.cp(file_path, versioned_file_path)
   versioned_file_path
 end
 
@@ -861,7 +928,7 @@ def upload_string_to_r2(key:, body:, content_type:, dry_run: DRY_RUN)
 end
 
 def upload_file_to_r2(file_path:, storage_platform:, arch:, channel:, version:, dry_run: DRY_RUN)
-  versioned_file_path = create_versioned_file(original_file_path: file_path, version:, arch:)
+  versioned_file_path = prepare_artifact_for_upload(file_path:, version:, arch:)
   UI.user_error!("File #{versioned_file_path} does not exist") unless File.exist?(versioned_file_path)
 
   key = "studio/#{channel}/#{version}/#{storage_platform}/#{arch}/#{File.basename(versioned_file_path)}"
@@ -900,7 +967,7 @@ end
 
 # Helper method to upload a file to Apps CDN with dry run support
 def upload_file_to_apps_cdn(site_id:, product:, file_path:, platform:, arch:, build_type:, visibility:, version:, build_number:, release_notes:, error_on_duplicate:, install_type: 'Full Install', sha: nil, dry_run: DRY_RUN)
-  versioned_file_path = create_versioned_file(original_file_path: file_path, version:, arch:)
+  versioned_file_path = prepare_artifact_for_upload(file_path:, version:, arch:)
 
   UI.user_error!("File #{versioned_file_path} does not exist") unless File.exist?(versioned_file_path)
 
@@ -973,12 +1040,55 @@ end
 
 # Read the current version from package.json
 def read_package_json_version
-  JSON.parse(File.read(PACKAGE_JSON_PATH))['version']
+  package_json_data['version']
+end
+
+def local_branch_exists?(branch_name)
+  system('git', 'show-ref', '--verify', '--quiet', "refs/heads/#{branch_name}")
+end
+
+def ensure_code_freeze_branch(version:)
+  branch_name = "release/#{version}"
+  branch_state = :created
+
+  if Fastlane::Helper::GitHelper.branch_exists_on_remote?(branch_name: branch_name)
+    sh('git', 'fetch', 'origin', branch_name)
+    sh('git', 'checkout', '-B', branch_name, "origin/#{branch_name}")
+    branch_state = :existing
+  elsif local_branch_exists?(branch_name)
+    sh('git', 'checkout', branch_name)
+    branch_state = :existing
+  else
+    Fastlane::Helper::GitHelper.checkout_and_pull(MAIN_BRANCH)
+    Fastlane::Helper::GitHelper.create_branch(branch_name)
+  end
+
+  reset_package_json_data!
+  current_version = read_package_json_version
+  base_version = current_version.sub(/-beta\d+$/, '')
+
+  if current_version.match?(/-beta\d+$/)
+    UI.user_error!("Release branch #{branch_name} has already advanced to #{current_version}. Run code_freeze only before the beta version bump.")
+  end
+
+  if Gem::Version.new(base_version) > Gem::Version.new(version)
+    UI.user_error!("Release branch #{branch_name} is already at #{current_version}, which is newer than the requested release #{version}.")
+  end
+
+  if branch_state == :existing && base_version != version
+    UI.message("Reusing #{branch_name} with app version #{current_version}; continuing because the release version bump happens later during beta creation.")
+  end
+
+  {
+    branch_name: branch_name,
+    branch_state: branch_state
+  }
 end
 
 # Set the version in apps/studio/package.json (and update root package-lock.json via npm workspaces)
 def set_package_json_version(version:)
   sh('npm', 'version', version, '--no-git-tag-version', '-w', 'studio-app', '--prefix', PROJECT_ROOT_FOLDER)
+  reset_package_json_data!
 end
 
 # Extract release notes for a specific version from RELEASE-NOTES.txt
@@ -997,11 +1107,18 @@ def extract_release_notes(version:)
   end
 end
 
-# Generate a draft release notes section from merged PRs and prepend it to RELEASE-NOTES.txt.
-# Uses GitHub's generate-notes API to list PRs since the last published release.
-def update_release_notes_draft(version:)
-  # Find the latest stable (non-beta) release tag reachable from HEAD.
+def release_notes_fallback_body(version:, reason: nil)
+  UI.important("Falling back to manual release notes for #{version}: #{reason}") if reason
+
+  [
+    '* Release notes could not be generated automatically for this fork release.',
+    '* Review merged changes manually before publishing the final release.'
+  ].join("\n")
+end
+
+def generate_release_notes_body(version:)
   previous_tag = find_previous_tag(pattern: 'v*', exclude: '*beta*')
+  return release_notes_fallback_body(version:, reason: 'no previous stable tag was found') if previous_tag.to_s.empty?
 
   changelog = get_prs_between_tags(
     repository: GITHUB_REPO,
@@ -1010,28 +1127,43 @@ def update_release_notes_draft(version:)
     target_commitish: 'HEAD'
   )
 
-  # Convert "* Title by @user in https://github.com/Org/Repo/pull/123" to "* Title #123"
-  lines = changelog.lines.reject { |l| l.start_with?('##') || l.strip.empty? }
-  formatted = lines.map do |line|
-    line.sub(%r{ by @\S+ in https://github\.com/\S+/pull/(\d+)}, ' #\1')
-  end.join.strip
+  lines = changelog.lines.map(&:strip).reject(&:empty?).reject { |line| line.start_with?('##') }
+  release_note_lines = lines.reject { |line| line.start_with?('**Full Changelog**:') }
+  valid_release_note_lines = release_note_lines.select { |line| line.start_with?('* ') }
 
-  if formatted.empty?
-    UI.important('No PRs found for draft release notes — skipping RELEASE-NOTES.txt update')
-    return
+  if valid_release_note_lines.empty? || valid_release_note_lines.length != release_note_lines.length
+    reason = lines.first || 'GitHub generate-notes returned an unexpected response'
+    return release_notes_fallback_body(version:, reason: reason)
   end
 
+  # Convert "* Title by @user in https://github.com/Org/Repo/pull/123" to "* Title #123"
+  formatted = valid_release_note_lines.map do |line|
+    line.sub(%r{ by @\S+ in https://github\.com/\S+/pull/(\d+)}, ' #\1')
+  end.join("\n")
+
+  formatted
+rescue StandardError => error
+  release_notes_fallback_body(version:, reason: error.message)
+end
+
+def upsert_release_notes_section(version:, body:)
   notes_path = File.join(PROJECT_ROOT_FOLDER, 'RELEASE-NOTES.txt')
   content = File.read(notes_path)
+  new_section = "#{version}\n=====\n#{body.strip}\n\n"
+  section_regex = /^#{Regexp.escape(version)}\n=+\n.*?(?=^\d+\.\d+\S*\n=+|\z)/m
 
-  new_section = "#{version}\n=====\n#{formatted}\n"
-
-  # Insert the new version section after the "Unreleased" header
-  unless content.sub!(/^(Unreleased\n=+\n)\n*/, "\\1\n#{new_section}\n")
+  if content.match?(section_regex)
+    content.sub!(section_regex, new_section)
+  elsif !content.sub!(/^(Unreleased\n=+\n)\n*/, "\\1\n#{new_section}")
     UI.user_error!("Could not find 'Unreleased' header in RELEASE-NOTES.txt. Please ensure the file has an 'Unreleased' section.")
   end
-  File.write(notes_path, content)
 
+  File.write(notes_path, content)
+end
+
+# Generate a draft release notes section from merged PRs and upsert it into RELEASE-NOTES.txt.
+def update_release_notes_draft(version:)
+  upsert_release_notes_section(version:, body: generate_release_notes_body(version:))
   UI.success("Draft release notes for #{version} added to RELEASE-NOTES.txt")
 end
 
