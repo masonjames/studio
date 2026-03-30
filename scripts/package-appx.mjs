@@ -6,10 +6,17 @@ import packageJson from '../apps/studio/package.json' with { type: 'json' };
 
 console.log( '--- :electron: Packaging AppX' );
 
-console.log( '~~~ Verifying WINDOWS_CODE_SIGNING_CERT_PASSWORD env var...' );
-if ( ! process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD ) {
-	console.error( 'Required env var WINDOWS_CODE_SIGNING_CERT_PASSWORD is not set!' );
-	process.exit( 1 );
+const skipSigning = process.env.STUDIO_SKIP_SIGNING === 'true';
+const hasWindowsCodeSigning = ! skipSigning && !! process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD;
+
+if ( skipSigning ) {
+	console.log( '~~~ Skipping signed AppX output because STUDIO_SKIP_SIGNING=true' );
+} else if ( hasWindowsCodeSigning ) {
+	console.log( '~~~ WINDOWS_CODE_SIGNING_CERT_PASSWORD found. Signed AppX output enabled.' );
+} else {
+	console.log(
+		'~~~ WINDOWS_CODE_SIGNING_CERT_PASSWORD is not set. Continuing with unsigned AppX output only.'
+	);
 }
 
 const __dirname = path.dirname( fileURLToPath( import.meta.url ) );
@@ -58,6 +65,14 @@ const normalizeWindowsVersion = ( version ) => {
 const appStoreVersion = normalizeWindowsVersion( packageJson.version );
 
 const appxName = packageJson.productName + '-appx';
+const packageDisplayName = process.env.STUDIO_WINDOWS_PACKAGE_DISPLAY_NAME || 'WP Studio';
+const publisherDisplayName = process.env.STUDIO_WINDOWS_PUBLISHER_DISPLAY_NAME || 'Mason James';
+const identityName = process.env.STUDIO_WINDOWS_IDENTITY_NAME || 'MasonJames.WPStudio';
+const unsignedPublisher = process.env.STUDIO_WINDOWS_STORE_PUBLISHER || 'CN=Mason James';
+const signedPublisher =
+	process.env.STUDIO_WINDOWS_SIGNED_PUBLISHER ||
+	process.env.STUDIO_WINDOWS_STORE_PUBLISHER ||
+	'CN=Mason James';
 
 async function addProtocolHandlerToManifest( manifestPath ) {
 	console.log( '~~~ Adding protocol handler to manifest...' );
@@ -73,7 +88,7 @@ async function addProtocolHandlerToManifest( manifestPath ) {
 	const protocolExtension = `      <Extensions>
         <uap:Extension Category="windows.protocol">
           <uap:Protocol Name="wp-studio">
-            <uap:DisplayName>WordPress.com Local Dev Protocol</uap:DisplayName>
+            <uap:DisplayName>WP.com Local Dev Protocol</uap:DisplayName>
           </uap:Protocol>
         </uap:Extension>
       </Extensions>`;
@@ -134,7 +149,7 @@ const sharedOptions = {
 	inputDirectory: path.resolve( outPath, `Studio-win32-${ architecture }` ),
 	packageVersion: appStoreVersion,
 	// Results in Id being invalid (might just be a matter of escaping, though)
-	// packageName: 'WordPress Studio',
+	// packageName: 'WP Studio',
 	packageName: 'Studio',
 	packageDescription: packageJson.description,
 	packageExecutable: `app/${ packageJson.productName }.exe`,
@@ -142,9 +157,9 @@ const sharedOptions = {
 	deploy: false,
 	assets: assetsPath,
 	makePri: false, // from electron2appx docs: "you don't need to unless you know you do"
-	packageDisplayName: 'WordPress Studio',
-	publisherDisplayName: 'Automattic, Inc.',
-	identityName: '22490Automattic.StudiobyWordPress.com',
+	packageDisplayName,
+	publisherDisplayName,
+	identityName,
 	finalSay: async function () {
 		// This hook runs after manifest generation but before packaging
 		const manifestPath = path.join( this.outputDirectory, 'pre-appx', 'AppXManifest.xml' );
@@ -162,19 +177,23 @@ console.log(
 await convertToWindowsStore( {
 	...sharedOptions,
 	// See details at https://partner.microsoft.com/en-us/dashboard/products/<id>/identity
-	publisher: 'CN=E2E5A157-746D-4B04-9116-ABE5CB928306',
+	publisher: unsignedPublisher,
 	devCert: 'nil', // skip code signing for Store upload
 	outputDirectory: appxOutputPathUnsigned,
 } );
 
-// Create signed AppX
-const appxOutputPathSigned = path.resolve( outPath, `${ appxName }-${ architecture }-signed` );
-console.log( `~~~ Creating signed .appx for local testing at ${ appxOutputPathSigned }...` );
+if ( hasWindowsCodeSigning ) {
+	// Create signed AppX
+	const appxOutputPathSigned = path.resolve( outPath, `${ appxName }-${ architecture }-signed` );
+	console.log( `~~~ Creating signed .appx for local testing at ${ appxOutputPathSigned }...` );
 
-await convertToWindowsStore( {
-	...sharedOptions,
-	publisher: 'CN=&quot;Automattic, Inc.&quot;, O=&quot;Automattic, Inc.&quot;, S=California, C=US',
-	devCert: 'certificate.pfx',
-	certPass: process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD,
-	outputDirectory: appxOutputPathSigned,
-} );
+	await convertToWindowsStore( {
+		...sharedOptions,
+		publisher: signedPublisher,
+		devCert: 'certificate.pfx',
+		certPass: process.env.WINDOWS_CODE_SIGNING_CERT_PASSWORD,
+		outputDirectory: appxOutputPathSigned,
+	} );
+} else {
+	console.log( '~~~ Skipping signed .appx generation.' );
+}

@@ -55,7 +55,7 @@ export const writeHostsFile = async ( content: string ): Promise< void > => {
 				? `type ${ tempPath } > ${ hostsPath }`
 				: `cat ${ tempPath } > ${ hostsPath }`;
 		await sudoExec( command, {
-			name: 'WordPress Studio',
+			name: 'WP Studio',
 		} );
 	} catch ( error ) {
 		console.error( 'Error writing hosts file:', error );
@@ -174,7 +174,7 @@ export const updateDomainInHosts = async (
 
 /**
  * Helper function for manipulating the "block" of entries in the hosts file
- * pertaining to WordPress Studio.
+ * pertaining to WP Studio.
  *
  * @param content - Content of the hosts file
  * @param updateFn - Function to map/filter over hosts entries
@@ -183,13 +183,13 @@ function updateStudioBlock( content: string, updateFn: ( entries: string[] ) => 
 	/**
 	 * Regular expression matching a block of entries demarcated as follows:
 	 *
-	 * 	# BEGIN WordPress Studio
+	 * 	# BEGIN WP Studio
 	 * 	127.0.0.1 foo.wp.cloud
 	 * 	127.0.0.1 bar.wp.cloud
-	 * 	# END WordPress Studio
+	 * 	# END WP Studio
 	 */
 	const STUDIO_BLOCK_PATTERN =
-		/(^|\n)(# BEGIN WordPress Studio)([\s\S]*?)\n(# END WordPress Studio)/;
+		/(^|\n)(# BEGIN (?:WordPress Studio|WP Studio))([\s\S]*?)\n(# END (?:WordPress Studio|WP Studio))/;
 
 	const match = content.match( STUDIO_BLOCK_PATTERN );
 
@@ -215,10 +215,7 @@ function updateStudioBlock( content: string, updateFn: ( entries: string[] ) => 
 	else {
 		const newEntries = updateFn( [] );
 		if ( newEntries.length ) {
-			return (
-				content +
-				[ '\n', '# BEGIN WordPress Studio', ...newEntries, '# END WordPress Studio' ].join( '\n' )
-			);
+			return content + [ '\n', '# BEGIN WP Studio', ...newEntries, '# END WP Studio' ].join( '\n' );
 		}
 	}
 

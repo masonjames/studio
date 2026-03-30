@@ -6,6 +6,7 @@ gem 'fastlane', '~> 2.232'
 gem 'fastlane-plugin-wpmreleasetoolkit', '~> 14.2'
 
 gem 'aws-sdk-cloudfront', '~> 1.87'
+gem 'aws-sdk-s3', '~> 1.187'
 
 gem 'rubocop', '~> 1.42', require: false
 

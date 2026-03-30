@@ -19,19 +19,17 @@ export function OnboardingConnectToWpcom( { onSkip }: { onSkip: () => void } ) {
 		<div className="h-full flex flex-col">
 			<div className="flex flex-col gap-4 my-auto text-pretty">
 				<Heading data-testid="onboarding-welcome-title" className="a8c-subtitle text-xl">
-					{ __( 'Welcome to WordPress Studio' ) }
+					{ __( 'Welcome to WP Studio' ) }
 				</Heading>
 
 				<div className="text-frame-text-secondary a8c-body">
-					{ __(
-						'Start by connecting your WordPress.com account to unlock the full power of WordPress Studio.'
-					) }
+					{ __( 'Start by connecting your WP.com account to unlock the full power of WP Studio.' ) }
 				</div>
 
 				<div>
 					{ [
 						__( 'Share preview sites with clients and colleagues' ),
-						__( 'Seamlessly sync with WordPress.com and Pressable' ),
+						__( 'Seamlessly sync with WP.com and Pressable' ),
 						__( 'Get smart suggestions from the Studio Assistant' ),
 					].map( ( text ) => (
 						<div key={ text } className="text-frame-text-secondary a8c-body flex items-start">
@@ -54,7 +52,7 @@ export function OnboardingConnectToWpcom( { onSkip }: { onSkip: () => void } ) {
 								authenticate();
 							} }
 						>
-							{ __( 'Log in to WordPress.com' ) }
+							{ __( 'Log in to WP.com' ) }
 							<ArrowIcon />
 						</Button>
 					</Tooltip>
@@ -73,7 +71,7 @@ export function OnboardingConnectToWpcom( { onSkip }: { onSkip: () => void } ) {
 					placement="bottom-start"
 				>
 					<div className="text-frame-text-secondary a8c-body">
-						{ __( 'New to WordPress.com?' ) }{ ' ' }
+						{ __( 'New to WP.com?' ) }{ ' ' }
 						<Button
 							aria-description={ isOffline ? offlineMessage : '' }
 							aria-disabled={ isOffline }

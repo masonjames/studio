@@ -8,8 +8,9 @@ steps:
   - label: ":snowflake: Code Freeze"
     plugins: [$CI_TOOLKIT_PLUGIN, $NVM_PLUGIN]
     command: |
-      echo "--- :robot_face: Use bot for Git operations"
-      source use-bot-for-git
+      echo "--- :robot_face: Set up Git identity"
+      git config user.name "Studio Release Bot"
+      git config user.email "studio-bot@masonjames.com"
 
       echo "--- :npm: Install Node dependencies"
       .buildkite/commands/install-node-dependencies.sh
@@ -25,5 +26,5 @@ steps:
       queue: mac
     retry:
       manual:
-        reason: If release jobs fail, you should always re-trigger the task from Releases V2 rather than retrying the individual job from Buildkite
+        reason: Re-trigger this release action from the Release Dispatch workflow or the studio-release-dispatch Buildkite pipeline instead of retrying the individual job
         allowed: false

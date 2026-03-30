@@ -18,7 +18,7 @@ async function main() {
 
 	const studioArgv: StudioArgv = yargs( process.argv.slice( 2 ) )
 		.scriptName( 'studio' )
-		.usage( __( 'WordPress Studio CLI' ) )
+		.usage( __( 'WP Studio CLI' ) )
 		.locale( yargsLocale )
 		.version( version )
 		.option( 'avoid-telemetry', {
@@ -30,7 +30,7 @@ async function main() {
 			normalize: true,
 			default: process.cwd(),
 			defaultDescription: __( 'Current directory' ),
-			description: __( 'Path to the WordPress files' ),
+			description: __( 'Path to the WP files' ),
 			coerce: ( value ) => {
 				return path.resolve( untildify( value ) );
 			},
@@ -169,7 +169,7 @@ async function main() {
 		.strict();
 
 	if ( __ENABLE_STUDIO_AI__ ) {
-		studioArgv.command( 'ai', __( 'AI-powered WordPress assistant' ), async ( aiYargs ) => {
+		studioArgv.command( 'ai', __( 'AI-powered WP assistant' ), async ( aiYargs ) => {
 			const { registerCommand: registerAiCommand } = await import( 'cli/commands/ai' );
 			registerAiCommand( aiYargs );
 			aiYargs.command( 'sessions', __( 'Manage AI sessions' ), async ( sessionsYargs ) => {

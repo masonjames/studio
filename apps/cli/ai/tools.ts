@@ -205,7 +205,7 @@ async function runPreviewCommand(
 
 const createSiteTool = tool(
 	'site_create',
-	'Creates a new WordPress site with the latest WordPress version. Automatically sets up the site directory, installs WordPress, registers the site, and starts the server. Returns the site URL and credentials.',
+	'Creates a new WP site with the latest WP version. Automatically sets up the site directory, installs WP, registers the site, and starts the server. Returns the site URL and credentials.',
 	{
 		name: z.string().describe( 'The name for the new site (e.g., "My Coffee Shop")' ),
 	},
@@ -260,7 +260,7 @@ const createSiteTool = tool(
 
 const listSitesTool = tool(
 	'site_list',
-	'Lists all WordPress sites managed by Studio with their name, path, URL, and running status.',
+	'Lists all WP sites managed by Studio with their name, path, URL, and running status.',
 	{},
 	async () => {
 		try {
@@ -276,7 +276,7 @@ const listSitesTool = tool(
 
 const getSiteInfoTool = tool(
 	'site_info',
-	'Gets detailed information about a specific WordPress site by name or path, including its running status, URL, PHP version, and admin credentials.',
+	'Gets detailed information about a specific WP site by name or path, including its running status, URL, PHP version, and admin credentials.',
 	{
 		nameOrPath: z.string().describe( 'The site name or file system path to the site' ),
 	},
@@ -295,7 +295,7 @@ const getSiteInfoTool = tool(
 
 const startSiteTool = tool(
 	'site_start',
-	'Starts a WordPress site by name or path. The site must already exist in Studio.',
+	'Starts a WP site by name or path. The site must already exist in Studio.',
 	{
 		nameOrPath: z.string().describe( 'The site name or file system path to the site' ),
 	},
@@ -314,7 +314,7 @@ const startSiteTool = tool(
 
 const stopSiteTool = tool(
 	'site_stop',
-	'Stops a running WordPress site by name or path.',
+	'Stops a running WP site by name or path.',
 	{
 		nameOrPath: z.string().describe( 'The site name or file system path to the site' ),
 	},
@@ -333,7 +333,7 @@ const stopSiteTool = tool(
 
 const deleteSiteTool = tool(
 	'site_delete',
-	'Deletes a WordPress site by name or path. Removes the site from Studio and optionally moves site files to trash.',
+	'Deletes a WP site by name or path. Removes the site from Studio and optionally moves site files to trash.',
 	{
 		nameOrPath: z.string().describe( 'The site name or file system path to the site' ),
 		deleteFiles: z
@@ -356,7 +356,7 @@ const deleteSiteTool = tool(
 
 const createPreviewTool = tool(
 	'preview_create',
-	'Creates a WordPress.com preview site from a local Studio site. Requires WordPress.com authentication. This can take a few minutes, so tell the user to wait after starting it.',
+	'Creates a WP.com preview site from a local Studio site. Requires WP.com authentication. This can take a few minutes, so tell the user to wait after starting it.',
 	{
 		nameOrPath: z.string().describe( 'The local site name or file system path to preview' ),
 	},
@@ -374,7 +374,7 @@ const createPreviewTool = tool(
 
 const listPreviewsTool = tool(
 	'preview_list',
-	'Lists WordPress.com preview sites associated with a local Studio site. Requires WordPress.com authentication.',
+	'Lists WP.com preview sites associated with a local Studio site. Requires WP.com authentication.',
 	{
 		nameOrPath: z.string().describe( 'The local site name or file system path' ),
 	},
@@ -392,7 +392,7 @@ const listPreviewsTool = tool(
 
 const updatePreviewTool = tool(
 	'preview_update',
-	'Updates an existing WordPress.com preview site from a local Studio site. Requires WordPress.com authentication. This can take a few minutes, so tell the user to wait after starting it.',
+	'Updates an existing WP.com preview site from a local Studio site. Requires WP.com authentication. This can take a few minutes, so tell the user to wait after starting it.',
 	{
 		nameOrPath: z.string().describe( 'The local site name or file system path' ),
 		host: z
@@ -420,7 +420,7 @@ const updatePreviewTool = tool(
 
 const deletePreviewTool = tool(
 	'preview_delete',
-	'Deletes a WordPress.com preview site by hostname or URL. Requires WordPress.com authentication.',
+	'Deletes a WP.com preview site by hostname or URL. Requires WP.com authentication.',
 	{
 		host: z
 			.string()
@@ -439,7 +439,7 @@ const deletePreviewTool = tool(
 // Note: wp.ts runCommand calls process.exit(), so we use the lower-level sendWpCliCommand directly.
 const runWpCliTool = tool(
 	'wp_cli',
-	'Runs a WP-CLI command on a specific WordPress site. The site must be running. ' +
+	'Runs a WP-CLI command on a specific WP site. The site must be running. ' +
 		'Examples: "plugin install woocommerce --activate", "option get blogname", "user list".',
 	{
 		nameOrPath: z.string().describe( 'The site name or file system path to the site' ),
@@ -498,7 +498,7 @@ const runWpCliTool = tool(
 
 const validateBlocksTool = tool(
 	'validate_blocks',
-	"Validates WordPress block content by running each block through its save() function in the site's block editor (real browser). " +
+	"Validates WP block content by running each block through its save() function in the site's block editor (real browser). " +
 		'The site must be running. Returns per-block validation results with expected HTML for invalid blocks.',
 	{
 		nameOrPath: z
@@ -507,11 +507,11 @@ const validateBlocksTool = tool(
 		filePath: z
 			.string()
 			.optional()
-			.describe( 'Path to a file containing WordPress block content to validate' ),
+			.describe( 'Path to a file containing WP block content to validate' ),
 		content: z
 			.string()
 			.optional()
-			.describe( 'Raw WordPress block content (HTML with block comments) to validate' ),
+			.describe( 'Raw WP block content (HTML with block comments) to validate' ),
 	},
 	async ( args ) => {
 		try {

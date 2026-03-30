@@ -20,7 +20,7 @@ export async function runCommand(): Promise< void > {
 	try {
 		const existingToken = await readAuthToken();
 		if ( existingToken ) {
-			logger.reportSuccess( __( 'Already authenticated with WordPress.com' ) );
+			logger.reportSuccess( __( 'Already authenticated with WP.com' ) );
 			return;
 		}
 	} catch ( error ) {
@@ -94,7 +94,7 @@ export async function runCommand(): Promise< void > {
 export const registerCommand = ( yargs: StudioArgv ) => {
 	return yargs.command( {
 		command: 'login',
-		describe: __( 'Log in to WordPress.com' ),
+		describe: __( 'Log in to WP.com' ),
 		builder: ( yargs ) => {
 			return yargs.option( 'path', {
 				hidden: true,

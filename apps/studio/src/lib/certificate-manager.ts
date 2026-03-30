@@ -70,7 +70,7 @@ export async function trustRootCA(): Promise< void > {
 			await new Promise< void >( ( resolve, reject ) => {
 				sudo.exec(
 					`certutil -addstore -f "ROOT" "${ CA_CERT_PATH }"`,
-					{ name: 'WordPress Studio' },
+					{ name: 'WP Studio' },
 					( error ) => {
 						if ( error ) {
 							console.error( 'Error adding certificate to system trust store:', error );

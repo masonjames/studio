@@ -1,10 +1,10 @@
 {
 	"name": "studio-app",
-	"author": "Automattic Inc.",
+	"author": "Mason James",
 	"private": true,
-	"productName": "Studio",
+	"productName": "WP Studio",
 	"version": "1.7.7",
-	"description": "Local WordPress development environment using Playgrounds",
+	"description": "Local WP development environment using Playgrounds",
 	"license": "GPL-2.0-or-later",
 	"main": "dist/main/index.js",
 	"config": {

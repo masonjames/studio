@@ -142,7 +142,7 @@ async function getAppMenu(
 			role: 'appMenu',
 			submenu: [
 				{
-					label: __( 'About WordPress Studio' ),
+					label: __( 'About WP Studio' ),
 					click: openAboutWindow,
 				},
 				...( isUpdateReadyToInstall()
@@ -343,7 +343,7 @@ async function getAppMenu(
 			role: 'help',
 			submenu: [
 				{
-					label: __( 'WordPress Studio Help' ),
+					label: __( 'WP Studio Help' ),
 					click: async () => {
 						const locale = await getUserLocaleWithFallback();
 						void shellOpenExternalWrapper( getLocalizedLink( locale, 'docsStudio' ) );
@@ -360,7 +360,7 @@ async function getAppMenu(
 				...( process.platform === 'win32'
 					? [
 							{
-								label: __( 'How can I make WordPress Studio faster?' ),
+								label: __( 'How can I make WP Studio faster?' ),
 								click: () => {
 									void promptWindowsSpeedUpSites( { skipIfAlreadyPrompted: false } );
 								},

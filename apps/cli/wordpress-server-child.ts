@@ -1,5 +1,5 @@
 /**
- * WordPress Studio Server Child Process
+ * WP Studio Server Child Process
  *
  * This child process is managed by the process manager daemon and runs a single WordPress site
  * server using Playground CLI. Each site runs in its own process.
@@ -458,7 +458,7 @@ function parsePhpError( error: unknown ): string {
 			.replace( /\s+/g, ' ' )
 			.trim();
 		if ( textContent ) {
-			return `WordPress error: ${ textContent }`;
+			return `WP error: ${ textContent }`;
 		}
 	}
 
@@ -472,7 +472,7 @@ function parsePhpError( error: unknown ): string {
 	if ( message.includes( 'PHP.run() failed with exit code' ) ) {
 		const exitCodeMatch = message.match( /exit code (\d+)/ );
 		const exitCode = exitCodeMatch ? exitCodeMatch[ 1 ] : 'unknown';
-		return `WordPress failed to start (PHP exit code ${ exitCode }). Check the site's debug.log for details.`;
+		return `WP failed to start (PHP exit code ${ exitCode }). Check the site's debug.log for details.`;
 	}
 
 	return message;

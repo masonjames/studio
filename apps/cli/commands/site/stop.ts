@@ -51,20 +51,20 @@ export async function runCommand(
 			const site = await getSiteByFolder( siteFolder );
 			const runningProcess = await isServerRunning( site.id );
 			if ( ! runningProcess ) {
-				logger.reportSuccess( __( 'WordPress server is not running' ) );
+				logger.reportSuccess( __( 'WP server is not running' ) );
 				return;
 			}
 
-			logger.reportStart( LoggerAction.STOP_SITE, __( 'Stopping WordPress servers…' ) );
+			logger.reportStart( LoggerAction.STOP_SITE, __( 'Stopping WP servers…' ) );
 
 			try {
 				await stopWordPressServer( site.id );
 				await clearSiteLatestCliPid( site.id );
 				await updateSiteAutoStart( site.id, autoStart );
-				logger.reportSuccess( __( 'WordPress server stopped' ) );
+				logger.reportSuccess( __( 'WP server stopped' ) );
 				await stopProxyIfNoSitesNeedIt( site.id, logger );
 			} catch ( error ) {
-				throw new LoggerError( __( 'Failed to stop WordPress server' ), error );
+				throw new LoggerError( __( 'Failed to stop WP server' ), error );
 			}
 		} else {
 			const cliConfig = await readCliConfig();
@@ -96,7 +96,7 @@ export async function runCommand(
 					await unlockCliConfig();
 				}
 
-				logger.reportStart( LoggerAction.STOP_ALL_SITES, __( 'Stopping all WordPress servers…' ) );
+				logger.reportStart( LoggerAction.STOP_ALL_SITES, __( 'Stopping all WP servers…' ) );
 
 				await killDaemonAndChildren();
 				logger.reportSuccess(

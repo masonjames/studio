@@ -4,6 +4,8 @@ Releases are managed through [ReleasesV2](https://releases.a8c.com/) and automat
 
 Builds are signed, notarized (macOS), and uploaded to the Apps CDN automatically. Once on the CDN, auto-update delivers the new version to users.
 
+> Fork note: this document describes Automattic's internal release flow. Fork maintainers should use [docs/fork-release-process.md](fork-release-process.md), because ReleasesV2, the Apps CDN, and the WordPress.com updater endpoint are not fork-operated infrastructure.
+
 ## Release Lifecycle
 
 ### 1. Code Freeze

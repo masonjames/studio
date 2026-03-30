@@ -14,7 +14,7 @@ export async function setupWordPressFilesOnly( path: string ): Promise< void > {
 	const bundledWpPath = getWordPressVersionPath( 'latest' );
 
 	if ( ! ( await pathExists( bundledWpPath ) ) ) {
-		throw new Error( 'Bundled WordPress files not found. Please reinstall WordPress Studio.' );
+		throw new Error( 'Bundled WordPress files not found. Please reinstall WP Studio.' );
 	}
 
 	await recursiveCopyDirectory( bundledWpPath, path );

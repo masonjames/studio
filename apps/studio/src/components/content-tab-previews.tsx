@@ -44,7 +44,7 @@ function EmptyGeneric( {
 					{ [
 						sprintf( __( 'Create up to %d preview sites for free.' ), LIMIT_OF_ZIP_SITES_PER_USER ),
 						__( 'Preview sites expire 7 days after the last update.' ),
-						createInterpolateElement( __( 'Powered by <a> WordPress.com</a>.' ), {
+						createInterpolateElement( __( 'Powered by <a> WP.com</a>.' ), {
 							a: (
 								<Button
 									variant="link"
@@ -97,7 +97,7 @@ function NoAuth( { selectedSite }: React.ComponentProps< typeof EmptyGeneric > )
 							authenticate();
 						} }
 					>
-						{ __( 'Log in to WordPress.com' ) }
+						{ __( 'Log in to WP.com' ) }
 						<ArrowIcon />
 					</Button>
 				</Tooltip>
@@ -110,7 +110,7 @@ function NoAuth( { selectedSite }: React.ComponentProps< typeof EmptyGeneric > )
 					placement="bottom-start"
 				>
 					<span>
-						{ __( 'A WordPress.com account is required to create preview sites.' ) }{ ' ' }
+						{ __( 'A WP.com account is required to create preview sites.' ) }{ ' ' }
 						<Button
 							aria-description={ isOffline ? offlineMessage : '' }
 							aria-disabled={ isOffline }

@@ -1,0 +1,68 @@
+name: Release Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_action:
+        description: Release action to run in Buildkite
+        required: true
+        type: choice
+        options:
+          - code-freeze
+          - new-beta-release
+          - finalize-release
+          - publish-release
+          - new-hotfix-release
+      release_version:
+        description: Release version (for example 1.7.8)
+        required: true
+        type: string
+      github_username:
+        description: Optional GitHub username to assign as reviewer on backmerge PRs
+        required: false
+        type: string
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    env:
+      BUILDKITE_RELEASE_PIPELINE: ${{ vars.BUILDKITE_RELEASE_PIPELINE }}
+    steps:
+      - name: Validate Buildkite configuration
+        run: |
+          if [ -z "${BUILDKITE_RELEASE_PIPELINE}" ]; then
+            echo "Repository variable BUILDKITE_RELEASE_PIPELINE is not configured."
+            echo "Expected format: mason-james/studio-release-dispatch"
+            exit 1
+          fi
+
+      - name: Build release environment payload
+        id: payload
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          payload = {
+              "RELEASE_ACTION": os.environ["INPUT_RELEASE_ACTION"],
+              "RELEASE_VERSION": os.environ["INPUT_RELEASE_VERSION"],
+          }
+          github_username = os.environ.get("INPUT_GITHUB_USERNAME", "").strip()
+          if github_username:
+              payload["GITHUB_USERNAME"] = github_username
+          print(f"json={json.dumps(payload)}")
+          PY
+        env:
+          INPUT_RELEASE_ACTION: ${{ inputs.release_action }}
+          INPUT_RELEASE_VERSION: ${{ inputs.release_version }}
+          INPUT_GITHUB_USERNAME: ${{ inputs.github_username }}
+
+      - name: Trigger Buildkite release pipeline
+        uses: buildkite/trigger-pipeline-action@v2.0.0
+        with:
+          buildkite_api_access_token: ${{ secrets.BUILDKITE_API_ACCESS_TOKEN }}
+          pipeline: ${{ env.BUILDKITE_RELEASE_PIPELINE }}
+          branch: trunk
+          commit: ${{ github.sha }}
+          message: ":rocket: ${{ inputs.release_action }} ${{ inputs.release_version }} triggered from GitHub Actions"
+          build_env_vars: ${{ steps.payload.outputs.json }}

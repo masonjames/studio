@@ -3,9 +3,37 @@
 fastlane_require 'digest'
 fastlane_require 'zip'
 fastlane_require 'aws-sdk-cloudfront'
+fastlane_require 'aws-sdk-s3'
 fastlane_require 'json'
 fastlane_require 'net/http'
 fastlane_require 'uri'
+require 'fastlane/helper/s3_client_helper'
+require 'time'
+
+# Monkey-patch S3ClientHelper to support R2-compatible S3 endpoints.
+# Must use ::Fastlane to reopen the top-level module (fastlane evals
+# the Fastfile inside a FastFile instance binding, so bare `module Fastlane`
+# would create a nested module instead of reopening the existing one).
+::Fastlane::Helper::S3ClientHelper.class_eval do
+  alias_method :studio_original_client, :client unless method_defined?(:studio_original_client)
+
+  private
+
+  define_method(:client) do
+    endpoint = ENV['STUDIO_MATCH_S3_ENDPOINT'].to_s.strip
+    return studio_original_client if endpoint.empty?
+    return @client if @client
+
+    @client = Aws::S3::Client.new(
+      {
+        region: region,
+        credentials: create_credentials,
+        endpoint: endpoint,
+        force_path_style: ENV.fetch('STUDIO_MATCH_S3_FORCE_PATH_STYLE', 'true') == 'true'
+      }.compact
+    )
+  end
+end
 
 UI.user_error!('Please run fastlane via `bundle exec`') unless FastlaneCore::Helper.bundler?
 
@@ -19,10 +47,6 @@ BUILDS_FOLDER = File.join(PROJECT_ROOT_FOLDER, 'apps', 'studio', 'out')
 # Enable dry run mode through environment variable
 DRY_RUN = ENV['DRY_RUN'] == 'true'
 
-# Make sure the WPCOM API token is set
-UI.user_error!('Environment variable WPCOM_API_TOKEN is not set') if ENV['WPCOM_API_TOKEN'].nil? && !DRY_RUN
-UI.message("Running in #{DRY_RUN ? 'DRY RUN' : 'NORMAL'} mode")
-
 # Path to the Studio app's package.json (monorepo workspace)
 PACKAGE_JSON_PATH = File.join(PROJECT_ROOT_FOLDER, 'apps', 'studio', 'package.json')
 
@@ -33,17 +57,25 @@ POT_FILE_PATH = File.join(PROJECT_ROOT_FOLDER, 'i18n', 'bundle-strings.pot')
 GLOTPRESS_PROJECT_URL = 'https://translate.wordpress.com/projects/studio'
 TRANSLATIONS_DIR = File.join(PROJECT_ROOT_FOLDER, 'tools', 'common', 'translations')
 
-APPLE_TEAM_ID = 'PZYM8XX95Q'
-APPLE_BUNDLE_IDENTIFIER = 'com.automattic.studio'
-APPLE_API_KEY_PATH = File.join(SECRETS_FOLDER, 'app_store_connect_fastlane_api_key.json')
+APPLE_TEAM_ID = ENV.fetch('STUDIO_APPLE_TEAM_ID', 'J5K2J3K4H7')
+APPLE_BUNDLE_IDENTIFIER = ENV.fetch('STUDIO_APPLE_BUNDLE_IDENTIFIER', 'com.masonjames.studio')
+APPLE_API_KEY_PATH = ENV.fetch(
+  'STUDIO_APPLE_API_KEY_PATH',
+  File.join(SECRETS_FOLDER, 'app_store_connect_fastlane_api_key.json')
+)
+MATCH_S3_BUCKET = ENV.fetch('STUDIO_MATCH_S3_BUCKET', 'studio-releases')
+MATCH_S3_OBJECT_PREFIX = ENV.fetch('STUDIO_MATCH_S3_OBJECT_PREFIX', 'signing')
 
-# Site ID for WordPress.com Studio in the Apps CDN
-WPCOM_STUDIO_SITE_ID = '239164481'
+# Site ID for WP.com Studio in the Apps CDN
+WPCOM_STUDIO_SITE_ID = ENV.fetch('STUDIO_WPCOM_STUDIO_SITE_ID', '239164481')
 
-GITHUB_REPO = 'Automattic/studio'
-MAIN_BRANCH = 'trunk'
-BUILDKITE_ORG = 'automattic'
-BUILDKITE_PIPELINE = 'studio'
+GITHUB_REPO = ENV.fetch('STUDIO_GITHUB_REPO', 'masonjames/studio')
+MAIN_BRANCH = ENV.fetch('STUDIO_MAIN_BRANCH', 'trunk')
+BUILDKITE_ORG = ENV.fetch('STUDIO_BUILDKITE_ORG', 'mason-james')
+BUILDKITE_PIPELINE = ENV.fetch('STUDIO_BUILDKITE_PIPELINE', 'studio')
+RELEASE_STORAGE = ENV.fetch('STUDIO_RELEASE_STORAGE', 'r2')
+RELEASE_PRODUCT_NAME = ENV.fetch('STUDIO_RELEASE_PRODUCT_NAME', 'WP Studio')
+RELEASE_WEBSITE_URL = ENV.fetch('STUDIO_RELEASE_WEBSITE_URL', 'https://wpstudio.masonjames.com')
 
 # Use this instead of getting values from ENV directly
 # It will throw an error if the requested value is missing
@@ -52,27 +84,167 @@ def get_required_env(key)
   ENV.fetch(key)
 end
 
+def using_r2_release_storage?
+  RELEASE_STORAGE == 'r2'
+end
+
+def skip_signing?
+  ENV['STUDIO_SKIP_SIGNING'] == 'true'
+end
+
+def required_r2_env(key)
+  UI.user_error!("Environment variable `#{key}` is not set.") unless ENV.key?(key)
+  ENV.fetch(key)
+end
+
+def match_storage
+  ENV.fetch('STUDIO_MATCH_STORAGE', 's3')
+end
+
+def using_r2_match_storage?
+  match_storage == 'r2'
+end
+
+def match_bucket_name
+  ENV.fetch('STUDIO_MATCH_S3_BUCKET', using_r2_match_storage? ? required_r2_env('STUDIO_R2_BUCKET') : MATCH_S3_BUCKET)
+end
+
+def match_object_prefix
+  ENV.fetch('STUDIO_MATCH_S3_OBJECT_PREFIX', MATCH_S3_OBJECT_PREFIX)
+end
+
+def match_s3_endpoint
+  ENV.fetch('STUDIO_MATCH_S3_ENDPOINT', required_r2_env('STUDIO_R2_ENDPOINT'))
+end
+
+def match_s3_region
+  ENV.fetch('STUDIO_MATCH_S3_REGION', ENV.fetch('STUDIO_R2_REGION', 'auto'))
+end
+
+def match_s3_access_key
+  ENV.fetch('STUDIO_MATCH_S3_ACCESS_KEY_ID', required_r2_env('STUDIO_R2_ACCESS_KEY_ID'))
+end
+
+def match_s3_secret_access_key
+  ENV.fetch('STUDIO_MATCH_S3_SECRET_ACCESS_KEY', required_r2_env('STUDIO_R2_SECRET_ACCESS_KEY'))
+end
+
+def configure_r2_match_storage!
+  return unless using_r2_match_storage?
+
+  ENV['STUDIO_MATCH_S3_ENDPOINT'] = match_s3_endpoint
+  ENV['STUDIO_MATCH_S3_FORCE_PATH_STYLE'] = ENV.fetch('STUDIO_MATCH_S3_FORCE_PATH_STYLE', 'true')
+end
+
+def match_sync_code_signing_options
+  options = {
+    platform: 'macos',
+    app_identifier: APPLE_BUNDLE_IDENTIFIER,
+    team_id: APPLE_TEAM_ID,
+    type: 'developer_id',
+    storage_mode: 's3',
+    s3_bucket: match_bucket_name,
+    api_key_path: APPLE_API_KEY_PATH,
+    readonly: true
+  }
+
+  if using_r2_match_storage?
+    configure_r2_match_storage!
+    options[:s3_region] = match_s3_region
+    options[:s3_access_key] = match_s3_access_key
+    options[:s3_secret_access_key] = match_s3_secret_access_key
+    options[:s3_object_prefix] = match_object_prefix
+  end
+
+  options
+end
+
+def r2_bucket_name
+  required_r2_env('STUDIO_R2_BUCKET')
+end
+
+def r2_public_base_url
+  return ENV['STUDIO_R2_PUBLIC_BASE_URL'].chomp('/') if ENV['STUDIO_R2_PUBLIC_BASE_URL']
+  return 'https://example.invalid/studio' if DRY_RUN
+
+  UI.user_error!('Environment variable `STUDIO_R2_PUBLIC_BASE_URL` is not set.')
+end
+
+def r2_object_url(key)
+  "#{r2_public_base_url}/#{key}"
+end
+
+def r2_client
+  @r2_client ||= Aws::S3::Client.new(
+    access_key_id: required_r2_env('STUDIO_R2_ACCESS_KEY_ID'),
+    secret_access_key: required_r2_env('STUDIO_R2_SECRET_ACCESS_KEY'),
+    endpoint: required_r2_env('STUDIO_R2_ENDPOINT'),
+    region: ENV.fetch('STUDIO_R2_REGION', 'auto'),
+    force_path_style: true
+  )
+end
+
+def release_channel(version:)
+  return 'nightly' if version.nil?
+  return 'beta' if version.downcase.include?('beta')
+
+  'stable'
+end
+
+def fork_release_environment
+  ENV
+    .select { |key, _value| key.start_with?('STUDIO_') }
+    .transform_values(&:to_s)
+end
+
+def validate_release_configuration!
+  UI.user_error!("Unsupported STUDIO_RELEASE_STORAGE `#{RELEASE_STORAGE}`. Expected `appscdn` or `r2`.") unless %w[appscdn r2].include?(RELEASE_STORAGE)
+
+  if using_r2_release_storage? && !DRY_RUN
+    %w[
+      STUDIO_R2_BUCKET
+      STUDIO_R2_ENDPOINT
+      STUDIO_R2_ACCESS_KEY_ID
+      STUDIO_R2_SECRET_ACCESS_KEY
+      STUDIO_R2_PUBLIC_BASE_URL
+    ].each { |key| required_r2_env(key) }
+  elsif !DRY_RUN
+    UI.user_error!('Environment variable WPCOM_API_TOKEN is not set') if ENV['WPCOM_API_TOKEN'].nil?
+  end
+
+  return unless using_r2_match_storage? && !DRY_RUN
+
+  match_bucket_name
+  match_s3_endpoint
+  match_s3_access_key
+  match_s3_secret_access_key
+end
+
+validate_release_configuration!
+UI.message("Running in #{DRY_RUN ? 'DRY RUN' : 'NORMAL'} mode")
+
 before_all do |_lane|
   setup_ci # Fixes weird Keychain bugs
 end
 
 desc 'Download the development signing certificates to this machine'
 lane :set_up_signing do |_options|
-  sync_code_signing(
-    platform: 'macos',
-    app_identifier: APPLE_BUNDLE_IDENTIFIER,
-    team_id: APPLE_TEAM_ID,
-    type: 'developer_id',
-    storage_mode: 's3',
-    s3_bucket: 'a8c-fastlane-match',
-    api_key_path: APPLE_API_KEY_PATH,
-    readonly: true
-  )
+  if skip_signing?
+    UI.message('Skipping code signing setup because STUDIO_SKIP_SIGNING=true')
+    next
+  end
+
+  sync_code_signing(**match_sync_code_signing_options)
 end
 
 desc 'Notarize the compiled binary'
 lane :notarize_binary do
-  Dir[File.join(BUILDS_FOLDER, '**', 'Studio.app')].each do |path|
+  if skip_signing?
+    UI.message('Skipping notarization because STUDIO_SKIP_SIGNING=true')
+    next
+  end
+
+  Dir[File.join(BUILDS_FOLDER, '**', "#{RELEASE_PRODUCT_NAME}.app")].each do |path|
     notarize(
       package: path,
       api_key_path: APPLE_API_KEY_PATH,
@@ -80,7 +252,7 @@ lane :notarize_binary do
     )
   end
 
-  Dir[File.join(BUILDS_FOLDER, '**', 'Studio-*.dmg')].each do |path|
+  Dir[File.join(BUILDS_FOLDER, '**', "#{RELEASE_PRODUCT_NAME}-*.dmg")].each do |path|
     notarize(
       bundle_id: APPLE_BUNDLE_IDENTIFIER,
       package: path,
@@ -148,18 +320,22 @@ lane :distribute_release_build do |version: read_package_json_version|
     create_draft_github_release(version: version, release_tag: release_tag, builds: builds)
   end
 
-  slack(
-    username: 'CI Bot',
-    icon_url: 'https://octodex.github.com/images/jenktocat.jpg',
-    message: ":tada: #{release_tag} is now available! :tada:",
-    channel: '#dotcom-studio',
-    success: true,
-    slack_url: get_required_env('SLACK_WEBHOOK'),
-    payload: {
-      ':studio-app-icon-mac: Release available for': builds.each_value.map { |b| "[#{b[:name]}](#{b[:cdn_url]})" }.join(', ')
-    },
-    default_payloads: []
-  )
+  if ENV['SLACK_WEBHOOK']
+    slack(
+      username: 'CI Bot',
+      icon_url: 'https://octodex.github.com/images/jenktocat.jpg',
+      message: ":tada: #{release_tag} is now available! :tada:",
+      channel: '#dotcom-studio',
+      success: true,
+      slack_url: ENV['SLACK_WEBHOOK'],
+      payload: {
+        ':studio-app-icon-mac: Release available for': builds.each_value.map { |b| "[#{b[:name]}](#{b[:cdn_url]})" }.join(', ')
+      },
+      default_payloads: []
+    )
+  else
+    UI.message('Skipping Slack notification because SLACK_WEBHOOK is not configured')
+  end
 end
 
 ########################################################################
@@ -448,11 +624,13 @@ def distribute_builds(
   appx_version = "#{version[/\d+\.\d+\.\d+/]}.0"
   release_notes = release_tag.nil? ? "Development build #{version}-#{build_number}" : "Release #{release_tag}"
 
+  # macOS builds (always present)
   update_builds = {
     x64: {
       binary_path: File.join(BUILDS_FOLDER, 'Studio-darwin-x64', 'Studio.app.zip'),
       name: 'Mac Intel',
       platform: 'Mac - Intel',
+      storage_platform: 'darwin',
       arch: 'x64',
       install_type: 'Update',
       sha: commit_hash
@@ -461,33 +639,48 @@ def distribute_builds(
       binary_path: File.join(BUILDS_FOLDER, 'Studio-darwin-arm64', 'Studio.app.zip'),
       name: 'Mac Apple Silicon',
       platform: 'Mac - Silicon',
+      storage_platform: 'darwin',
       arch: 'arm64',
       install_type: 'Update',
       sha: commit_hash
-    },
-    windows_update: {
-      binary_path: File.join(BUILDS_FOLDER, 'make', 'squirrel.windows', 'x64', 'studio-update.nupkg'),
+    }
+  }
+
+  # Windows update builds (only when artifacts exist)
+  win_x64_nupkg = File.join(BUILDS_FOLDER, 'make', 'squirrel.windows', 'x64', 'studio-update.nupkg')
+  win_arm64_nupkg = File.join(BUILDS_FOLDER, 'make', 'squirrel.windows', 'arm64', 'studio-update.nupkg')
+
+  if File.exist?(win_x64_nupkg)
+    update_builds[:windows_update] = {
+      binary_path: win_x64_nupkg,
       name: 'Windows - x64 Update',
       platform: 'Windows - x64',
+      storage_platform: 'win32',
       arch: 'x64',
       install_type: 'Update',
       sha: get_windows_update_release_sha(arch: 'x64')
-    },
-    windows_arm64_update: {
-      binary_path: File.join(BUILDS_FOLDER, 'make', 'squirrel.windows', 'arm64', 'studio-update.nupkg'),
+    }
+  end
+
+  if File.exist?(win_arm64_nupkg)
+    update_builds[:windows_arm64_update] = {
+      binary_path: win_arm64_nupkg,
       name: 'Windows - ARM64 Update',
       platform: 'Windows - ARM64',
+      storage_platform: 'win32',
       arch: 'arm64',
       install_type: 'Update',
       sha: get_windows_update_release_sha(arch: 'arm64')
     }
-  }
+  end
 
+  # macOS full install builds (always present for releases)
   full_install_builds = {
     x64_dmg: {
       binary_path: File.join(BUILDS_FOLDER, 'Studio-darwin-x64.dmg'),
       name: 'Mac Intel (DMG)',
       platform: 'Mac - Intel',
+      storage_platform: 'darwin',
       arch: 'x64',
       install_type: 'Full Install'
     },
@@ -495,62 +688,120 @@ def distribute_builds(
       binary_path: File.join(BUILDS_FOLDER, 'Studio-darwin-arm64.dmg'),
       name: 'Mac Apple Silicon (DMG)',
       platform: 'Mac - Silicon',
-      arch: 'arm64',
-      install_type: 'Full Install'
-    },
-    windows: {
-      binary_path: File.join(BUILDS_FOLDER, 'make', 'squirrel.windows', 'x64', 'studio-setup.exe'),
-      name: 'Windows - x64',
-      platform: 'Windows - x64',
-      arch: 'x64',
-      install_type: 'Full Install'
-    },
-    windows_arm64: {
-      binary_path: File.join(BUILDS_FOLDER, 'make', 'squirrel.windows', 'arm64', 'studio-setup.exe'),
-      name: 'Windows - ARM64',
-      platform: 'Windows - ARM64',
-      arch: 'arm64',
-      install_type: 'Full Install'
-    },
-    windows_appx_unsigned: {
-      binary_path: File.join(BUILDS_FOLDER, 'Studio-appx-x64-unsigned', "Studio #{appx_version} unsigned.appx"),
-      name: 'Windows - x64 (Unsigned Appx)',
-      platform: 'Microsoft Store - x64',
-      arch: 'x64',
-      install_type: 'Full Install'
-    },
-    windows_arm64_appx_unsigned: {
-      binary_path: File.join(BUILDS_FOLDER, 'Studio-appx-arm64-unsigned', "Studio #{appx_version} unsigned.appx"),
-      name: 'Windows - ARM64 (Unsigned Appx)',
-      platform: 'Microsoft Store - ARM64',
+      storage_platform: 'darwin',
       arch: 'arm64',
       install_type: 'Full Install'
     }
   }
 
+  # Windows full install builds (only when artifacts exist)
+  win_x64_exe = File.join(BUILDS_FOLDER, 'make', 'squirrel.windows', 'x64', 'studio-setup.exe')
+  win_arm64_exe = File.join(BUILDS_FOLDER, 'make', 'squirrel.windows', 'arm64', 'studio-setup.exe')
+  win_x64_appx = File.join(BUILDS_FOLDER, 'Studio-appx-x64-unsigned', "Studio #{appx_version} unsigned.appx")
+  win_arm64_appx = File.join(BUILDS_FOLDER, 'Studio-appx-arm64-unsigned', "Studio #{appx_version} unsigned.appx")
+
+  if File.exist?(win_x64_exe)
+    full_install_builds[:windows] = {
+      binary_path: win_x64_exe,
+      name: 'Windows - x64',
+      platform: 'Windows - x64',
+      storage_platform: 'win32',
+      arch: 'x64',
+      install_type: 'Full Install'
+    }
+  end
+
+  if File.exist?(win_arm64_exe)
+    full_install_builds[:windows_arm64] = {
+      binary_path: win_arm64_exe,
+      name: 'Windows - ARM64',
+      platform: 'Windows - ARM64',
+      storage_platform: 'win32',
+      arch: 'arm64',
+      install_type: 'Full Install'
+    }
+  end
+
+  if File.exist?(win_x64_appx)
+    full_install_builds[:windows_appx_unsigned] = {
+      binary_path: win_x64_appx,
+      name: 'Windows - x64 (Unsigned Appx)',
+      platform: 'Microsoft Store - x64',
+      storage_platform: 'microsoft-store',
+      arch: 'x64',
+      install_type: 'Full Install'
+    }
+  end
+
+  if File.exist?(win_arm64_appx)
+    full_install_builds[:windows_arm64_appx_unsigned] = {
+      binary_path: win_arm64_appx,
+      name: 'Windows - ARM64 (Unsigned Appx)',
+      platform: 'Microsoft Store - ARM64',
+      storage_platform: 'microsoft-store',
+      arch: 'arm64',
+      install_type: 'Full Install'
+    }
+  end
+
   builds_to_upload = release_tag.nil? ? update_builds : { **update_builds, **full_install_builds }
+  # Filter out builds whose binary file doesn't exist (e.g., Windows builds
+  # when running macOS-only, or a single-arch build).
+  builds_to_upload = builds_to_upload.select { |_key, build| File.exist?(build[:binary_path]) }
+  UI.user_error!('No build artifacts found to upload. Did the build step succeed?') if builds_to_upload.empty?
 
   UI.message("Uploading #{builds_to_upload.count} builds (#{release_tag.nil? ? 'dev: updates only' : 'release: all builds'})")
 
-  # Upload to Apps CDN
+  channel = release_channel(version: release_tag)
+  published_at = Time.now.utc.iso8601
+
   builds_to_upload.each_value do |build|
-    result = upload_file_to_apps_cdn(
-      site_id: WPCOM_STUDIO_SITE_ID,
-      product: 'WordPress.com Studio',
-      file_path: build[:binary_path],
-      platform: build[:platform],
-      arch: build[:arch],
-      build_type: build_type,
-      install_type: build[:install_type],
-      visibility: 'external',
-      version: version,
-      build_number: build_number,
-      release_notes: release_notes,
-      sha: build[:sha],
-      error_on_duplicate: false
-    )
+    result = if using_r2_release_storage?
+               upload_file_to_r2(
+                 file_path: build[:binary_path],
+                 storage_platform: build[:storage_platform],
+                 arch: build[:arch],
+                 channel: channel,
+                 version: version
+               )
+             else
+               upload_file_to_apps_cdn(
+                 site_id: WPCOM_STUDIO_SITE_ID,
+                 product: RELEASE_PRODUCT_NAME,
+                 file_path: build[:binary_path],
+                 platform: build[:platform],
+                 arch: build[:arch],
+                 build_type: build_type,
+                 install_type: build[:install_type],
+                 visibility: 'external',
+                 version: version,
+                 build_number: build_number,
+                 release_notes: release_notes,
+                 sha: build[:sha],
+                 error_on_duplicate: false
+               )
+             end
     # Store the download URL for later use
     build[:cdn_url] = result[:media_url]
+    build[:artifact_size] = result[:file_size]
+    next unless using_r2_release_storage? && build[:install_type] == 'Update'
+
+    metadata = {
+      version: version.delete_prefix('v'),
+      channel: channel,
+      name: build[:name],
+      notes: release_notes,
+      pub_date: published_at,
+      url: build[:cdn_url],
+      sha: build[:sha],
+      size: build[:artifact_size]
+    }
+
+    upload_string_to_r2(
+      key: "studio/#{channel}/latest/#{build[:storage_platform]}/#{build[:arch]}/metadata.json",
+      body: JSON.pretty_generate(metadata),
+      content_type: 'application/json'
+    )
   end
 
   unless DRY_RUN
@@ -589,6 +840,62 @@ def create_versioned_file(original_file_path:, version:, arch:)
   UI.message("Copying #{original_file_path} to #{versioned_file_path}")
   FileUtils.cp(original_file_path, versioned_file_path)
   versioned_file_path
+end
+
+def upload_string_to_r2(key:, body:, content_type:, dry_run: DRY_RUN)
+  if dry_run
+    UI.message("[DRY RUN] Would upload inline content to #{r2_object_url(key)} (#{content_type})")
+    return { media_url: r2_object_url(key) }
+  end
+
+  r2_client.put_object(
+    bucket: r2_bucket_name,
+    key: key,
+    body: body,
+    content_type: content_type
+  )
+
+  UI.message("✅ Uploaded inline content to #{r2_object_url(key)}")
+
+  { media_url: r2_object_url(key) }
+end
+
+def upload_file_to_r2(file_path:, storage_platform:, arch:, channel:, version:, dry_run: DRY_RUN)
+  versioned_file_path = create_versioned_file(original_file_path: file_path, version:, arch:)
+  UI.user_error!("File #{versioned_file_path} does not exist") unless File.exist?(versioned_file_path)
+
+  key = "studio/#{channel}/#{version}/#{storage_platform}/#{arch}/#{File.basename(versioned_file_path)}"
+  media_url = "#{r2_public_base_url}/#{key}"
+  file_size = File.size(versioned_file_path)
+
+  if dry_run
+    UI.message('[DRY RUN] Upload step skipped due to dry run mode.')
+    UI.message("           File exists at: #{versioned_file_path}")
+    UI.message("           file size: #{file_size / 1024 / 1024} MB")
+    UI.message("           media url: #{media_url}")
+
+    return {
+      media_url: media_url,
+      file_size: file_size
+    }
+  end
+
+  UI.message("Uploading file: #{versioned_file_path} to #{media_url}")
+  File.open(versioned_file_path, 'rb') do |file_handle|
+    r2_client.put_object(
+      bucket: r2_bucket_name,
+      key: key,
+      body: file_handle
+    )
+  end
+
+  UI.message('--------------------------------')
+  UI.message("✅ Uploaded file: #{versioned_file_path} to #{media_url}")
+
+  {
+    media_url: media_url,
+    file_size: file_size
+  }
 end
 
 # Helper method to upload a file to Apps CDN with dry run support
@@ -765,7 +1072,7 @@ def create_draft_github_release(version:, release_tag:, builds:)
   body = notes
   unless links.empty?
     body += "\n\n---\nDownload Studio #{version}: #{links.join(', ')}\n\n" \
-            'The latest version is always available on the [WordPress Studio](https://developer.wordpress.com/studio/) site.'
+            "The latest version is always available on the [WP Studio](#{RELEASE_WEBSITE_URL}) site."
   end
 
   release_name = github_release_name(version:)
@@ -797,7 +1104,7 @@ def trigger_release_build(version:)
 
   environment = {
     'RELEASE_VERSION' => base_version
-  }
+  }.merge(fork_release_environment)
 
   common_args = {
     pipeline_file: 'release-build-and-distribute.yml',

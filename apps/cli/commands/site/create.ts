@@ -228,18 +228,18 @@ export async function runCommand(
 			if ( ! ( await pathExists( bundledWPPath ) ) ) {
 				throw new LoggerError(
 					__(
-						'Cannot set up WordPress. Bundled WordPress files not found. Please connect to the internet or reinstall Studio.'
+						'Cannot set up WP. Bundled WP files not found. Please connect to the internet or reinstall Studio.'
 					)
 				);
 			}
 
-			logger.reportStart( LoggerAction.SETUP_WORDPRESS, __( 'Copying bundled WordPress…' ) );
+			logger.reportStart( LoggerAction.SETUP_WORDPRESS, __( 'Copying bundled WP…' ) );
 			await recursiveCopyDirectory( bundledWPPath, sitePath );
-			logger.reportSuccess( __( 'WordPress files copied' ) );
+			logger.reportSuccess( __( 'WP files copied' ) );
 		} else if ( ! isOnlineStatus ) {
 			throw new LoggerError(
 				__(
-					'Cannot set up WordPress while offline. Specific WordPress versions require an internet connection. Try using "latest" version or ensure internet connectivity.'
+					'Cannot set up WP while offline. Specific WP versions require an internet connection. Try using "latest" version or ensure internet connectivity.'
 				)
 			);
 		}
@@ -394,8 +394,8 @@ export async function runCommand(
 			await setupCustomDomain( siteDetails, logger );
 
 			const startMessage = blueprint
-				? __( 'Starting WordPress server and applying Blueprint…' )
-				: __( 'Starting WordPress server…' );
+				? __( 'Starting WP server and applying Blueprint…' )
+				: __( 'Starting WP server…' );
 			logger.reportStart( LoggerAction.START_SITE, startMessage );
 			try {
 				const processDesc = await startWordPressServer( siteDetails, logger, {
@@ -403,7 +403,7 @@ export async function runCommand(
 					blueprint,
 					blueprintUri,
 				} );
-				logger.reportSuccess( __( 'WordPress server started' ) );
+				logger.reportSuccess( __( 'WP server started' ) );
 
 				stripWpConfigDbConstants( sitePath );
 
@@ -428,7 +428,7 @@ export async function runCommand(
 				if ( ! isWordPressDirResult ) {
 					await fs.promises.rm( sitePath, { recursive: true, force: true } );
 				}
-				throw new LoggerError( __( 'Failed to start WordPress server' ), error );
+				throw new LoggerError( __( 'Failed to start WP server' ), error );
 			}
 		} else {
 			if ( blueprint ) {
@@ -564,7 +564,7 @@ export const registerCommand = ( yargs: StudioArgv ) => {
 				} )
 				.option( 'wp', {
 					type: 'string',
-					describe: __( 'WordPress version (e.g., "latest", "6.4", "6.4.1")' ),
+					describe: __( 'WP version (e.g., "latest", "6.4", "6.4.1")' ),
 					defaultDescription: DEFAULT_WORDPRESS_VERSION,
 					coerce: coerceWpVersion,
 				} )
@@ -644,7 +644,7 @@ export const registerCommand = ( yargs: StudioArgv ) => {
 
 					const pathWasExplicitlyProvided = sitePath !== process.cwd();
 					if ( ! pathWasExplicitlyProvided ) {
-						const suggestedPath = getDefaultSitePath( siteName || __( 'My WordPress Website' ) );
+						const suggestedPath = getDefaultSitePath( siteName || __( 'My WP Website' ) );
 						const promptedPath = await input( {
 							message: __( 'Site path:' ),
 							default: suggestedPath,
@@ -670,7 +670,7 @@ export const registerCommand = ( yargs: StudioArgv ) => {
 							];
 						}
 						wpVersion = await select( {
-							message: __( 'WordPress version:' ),
+							message: __( 'WP version:' ),
 							choices: wpChoices,
 							default: DEFAULT_WORDPRESS_VERSION,
 							loop: false,

@@ -82,7 +82,7 @@ export function CreatePreviewButton( { onClick, selectedSite, user }: CreatePrev
 		DEMO_SITE_SIZE_LIMIT_GB
 	);
 	const versionMismatchMessage = __(
-		'Your Studio site is running versions not supported by preview sites. The preview site will automatically switch to the supported WordPress and PHP versions.'
+		'Your Studio site is running versions not supported by preview sites. The preview site will automatically switch to the supported WP and PHP versions.'
 	);
 	const snapshotCreationBlockedMessage = __( 'Preview sites are not available for your account.' );
 

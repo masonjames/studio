@@ -25,17 +25,17 @@ function SiteSyncDescription( { children }: PropsWithChildren ) {
 			<div className="flex flex-col">
 				<div className="flex items-center mb-1">
 					<div className="a8c-subtitle text-pretty">
-						{ __( 'Create a new site from WordPress.com or Pressable' ) }
+						{ __( 'Create a new site from WP.com or Pressable' ) }
 					</div>
 				</div>
 				<div className="max-w-[40ch] text-frame-text-secondary a8c-body">
 					{ __(
-						'Create a new local site and pull your WordPress.com or Pressable site with Jetpack activated.'
+						'Create a new local site and pull your WP.com or Pressable site with Jetpack activated.'
 					) }
 				</div>
 				<div className="mt-6">
 					{ [
-						__( 'Create a new local WordPress site.' ),
+						__( 'Create a new local WP site.' ),
 						__( 'Pull content from your remote site.' ),
 						__( 'Start working locally with your site data.' ),
 					].map( ( text ) => (
@@ -91,7 +91,7 @@ function NoAuthPullRemoteSiteView() {
 							authenticate();
 						} }
 					>
-						{ __( 'Log in to WordPress.com' ) }
+						{ __( 'Log in to WP.com' ) }
 						<ArrowIcon />
 					</Button>
 				</Tooltip>
@@ -104,7 +104,7 @@ function NoAuthPullRemoteSiteView() {
 					placement="bottom-start"
 				>
 					<span>
-						{ __( 'New to WordPress.com?' ) }{ ' ' }
+						{ __( 'New to WP.com?' ) }{ ' ' }
 						<Button
 							aria-description={ isOffline ? offlineMessage : '' }
 							aria-disabled={ isOffline }

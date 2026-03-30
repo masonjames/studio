@@ -4,6 +4,7 @@ import { sprintf, __ } from '@wordpress/i18n';
 import { AUTO_UPDATE_INTERVAL_MS } from 'src/constants';
 import { isDevRelease } from 'src/lib/version-utils';
 import { getMainWindow } from 'src/main-window';
+import releaseConfig from 'src/release-config';
 
 type UpdpaterState =
 	| 'init'
@@ -33,7 +34,15 @@ export function setupUpdates() {
 		return;
 	}
 
-	const url = new URL( 'https://public-api.wordpress.com/wpcom/v2/studio-app/updates' );
+	if ( releaseConfig.autoUpdatesEnabled === false ) {
+		console.log( 'Skipping auto-updates because release config disabled them' );
+		updaterState = 'done';
+		return;
+	}
+
+	const url = new URL(
+		releaseConfig.updaterBaseUrl || 'https://public-api.wordpress.com/wpcom/v2/studio-app/updates'
+	);
 	url.searchParams.append( 'platform', process.platform );
 	url.searchParams.append( 'studioArch', process.arch );
 	url.searchParams.append( 'version', app.getVersion() );
@@ -111,6 +120,12 @@ export function setupUpdates() {
 }
 
 export async function manualCheckForUpdates() {
+	if ( releaseConfig.autoUpdatesEnabled === false ) {
+		updaterState = 'done';
+		await showUpdatesDisabledNotice();
+		return;
+	}
+
 	if ( updaterState === 'waiting-for-restart' ) {
 		// Not a valid state to check for updatees, user should be manually restarting instead
 		// However, let's open the dialog to let them easily restart
@@ -141,6 +156,19 @@ export async function manualCheckForUpdates() {
 		console.log( `Manually checking for update: ${ autoUpdater.getFeedURL() }` );
 		autoUpdater.checkForUpdates();
 	}
+}
+
+async function showUpdatesDisabledNotice() {
+	const mainWindow = await getMainWindow();
+	await dialog.showMessageBox( mainWindow, {
+		type: 'info',
+		buttons: [ __( 'OK' ) ],
+		title: __( 'Application Update' ),
+		message: __( 'Updates are disabled for this build' ),
+		detail: __(
+			'This Studio build is configured to skip automatic update checks. Install a newer version manually when one becomes available.'
+		),
+	} );
 }
 
 export function isUpdateReadyToInstall() {

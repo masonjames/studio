@@ -359,7 +359,7 @@ const getErrorFromResponse = ( error: unknown ): string => {
 	) {
 		return error.error;
 	}
-	return __( 'Studio was unable to connect to WordPress.com. Please try again.' );
+	return __( 'Studio was unable to connect to WP.com. Please try again.' );
 };
 
 const PUSH_SITE_ABORT_CALLBACKS: Map< string, ( reason?: string | undefined ) => void > = new Map();
@@ -585,7 +585,7 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 			Sentry.captureException( error );
 			return rejectWithValue( {
 				title: sprintf( __( 'Error pulling from %s' ), connectedSite.name ),
-				message: __( 'Studio was unable to connect to WordPress.com. Please try again.' ),
+				message: __( 'Studio was unable to connect to WP.com. Please try again.' ),
 			} );
 		}
 	}

@@ -448,7 +448,7 @@ function Footer( {
 			<CreateButton
 				variant="link"
 				selectedSite={ selectedSite }
-				text={ __( 'Create a new WordPress.com site' ) }
+				text={ __( 'Create a new WP.com site' ) }
 				className="!text-frame-theme !shadow-frame-theme"
 			/>
 			<div className="flex gap-4">

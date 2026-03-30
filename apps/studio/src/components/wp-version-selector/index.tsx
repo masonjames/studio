@@ -36,7 +36,7 @@ export const WPVersionSelector = ( {
 }: WPVersionSelectorProps ) => {
 	const { __ } = useI18n();
 	const isOffline = useOffline();
-	const defaultOfflineMessage = __( 'Changing WordPress version requires an internet connection.' );
+	const defaultOfflineMessage = __( 'Changing WP version requires an internet connection.' );
 	const message = offlineMessage || defaultOfflineMessage;
 	const { data: wpVersions = [] } = useGetWordPressVersions( {
 		minimumVersion: MINIMUM_WORDPRESS_VERSION,
@@ -75,10 +75,10 @@ export const WPVersionSelector = ( {
 	return (
 		<label className="flex flex-1 flex-col gap-1.5 leading-4">
 			<span className="font-semibold flex items-center gap-0.5">
-				{ __( 'WordPress version' ) }
+				{ __( 'WP version' ) }
 				{ selectedValue !== 'latest' && (
 					<Tooltip
-						text={ __( 'WordPress Core automatic updates will be disabled for this site.' ) }
+						text={ __( 'WP Core automatic updates will be disabled for this site.' ) }
 						placement="top-start"
 					>
 						<Icon icon={ info } size={ 16 } />

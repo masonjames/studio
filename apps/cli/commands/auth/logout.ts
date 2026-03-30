@@ -43,7 +43,7 @@ export async function runCommand(): Promise< void > {
 export const registerCommand = ( yargs: StudioArgv ) => {
 	return yargs.command( {
 		command: 'logout',
-		describe: __( 'Log out and clear WordPress.com authentication' ),
+		describe: __( 'Log out and clear WP.com authentication' ),
 		builder: ( yargs ) => {
 			return yargs.option( 'path', {
 				hidden: true,
