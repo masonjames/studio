@@ -3,7 +3,7 @@
 	"author": "Mason James",
 	"private": true,
 	"productName": "WP Studio",
-	"version": "1.7.7",
+	"version": "1.7.8-beta1",
 	"description": "Local WP development environment using Playgrounds",
 	"license": "GPL-2.0-or-later",
 	"main": "dist/main/index.js",
