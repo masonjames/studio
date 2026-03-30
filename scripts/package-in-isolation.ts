@@ -17,10 +17,10 @@
  * relevant script in place.
  */
 
+import { spawnSync, type SpawnSyncOptions } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawnSync, type SpawnSyncOptions } from 'child_process';
 import { z } from 'zod';
 
 const REPO_ROOT = path.resolve( __dirname, '..' );
@@ -82,7 +82,9 @@ function copyArtifactsBack( stagingRoot: string ) {
 		if ( ! fs.existsSync( from ) ) continue;
 		fs.rmSync( to, { recursive: true, force: true } );
 		fs.mkdirSync( path.dirname( to ), { recursive: true } );
-		fs.cpSync( from, to, { recursive: true, force: true, verbatimSymlinks: true } );
+		// Preserve framework symlinks in a form that remains valid after copying artifacts
+		// back from the temporary packaging directory to the real workspace.
+		fs.cpSync( from, to, { recursive: true, force: true, verbatimSymlinks: false } );
 	}
 }
 
@@ -90,7 +92,7 @@ function main() {
 	const studioAppScripts = getStudioAppScripts();
 	const scriptName = process.argv[ 2 ];
 
-	if ( ! studioAppScripts.hasOwnProperty( scriptName ) ) {
+	if ( ! Object.prototype.hasOwnProperty.call( studioAppScripts, scriptName ) ) {
 		throw new Error(
 			`Unsupported script "${ scriptName }". Supported studio-app packaging scripts: ${ Object.keys(
 				studioAppScripts
