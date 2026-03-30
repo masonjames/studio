@@ -78,24 +78,32 @@ function shouldCopyToStaging( sourcePath: string ): boolean {
 
 function copyArtifactsBack( stagingRoot: string ) {
 	const artifactPaths = [
-		[ path.join( stagingRoot, 'out' ), path.join( REPO_ROOT, 'out' ) ],
-		[
-			path.join( stagingRoot, 'apps', 'studio', 'out' ),
-			path.join( REPO_ROOT, 'apps', 'studio', 'out' ),
-		],
-		[
-			path.join( stagingRoot, 'apps', 'studio', 'dist' ),
-			path.join( REPO_ROOT, 'apps', 'studio', 'dist' ),
-		],
+		{ from: path.join( stagingRoot, 'out' ), to: path.join( REPO_ROOT, 'out' ), replace: false },
+		{
+			from: path.join( stagingRoot, 'apps', 'studio', 'out' ),
+			to: path.join( REPO_ROOT, 'apps', 'studio', 'out' ),
+			replace: false,
+		},
+		{
+			from: path.join( stagingRoot, 'apps', 'studio', 'dist' ),
+			to: path.join( REPO_ROOT, 'apps', 'studio', 'dist' ),
+			replace: true,
+		},
 	] as const;
 
-	for ( const [ from, to ] of artifactPaths ) {
+	for ( const { from, to, replace } of artifactPaths ) {
 		if ( ! fs.existsSync( from ) ) continue;
-		fs.rmSync( to, { recursive: true, force: true } );
-		fs.mkdirSync( path.dirname( to ), { recursive: true } );
+		if ( replace ) {
+			fs.rmSync( to, { recursive: true, force: true } );
+			fs.mkdirSync( path.dirname( to ), { recursive: true } );
+		} else {
+			fs.mkdirSync( to, { recursive: true } );
+		}
 		// Preserve framework symlinks exactly as generated in the isolated packaging directory.
 		// Resolving them during copy rewrites relative framework links into absolute paths,
 		// which invalidates the signed Electron app bundle.
+		// Merge build output directories so sequential arch-specific packaging runs keep both sets
+		// of artifacts instead of deleting the previously generated architecture.
 		fs.cpSync( from, to, { recursive: true, force: true, verbatimSymlinks: true } );
 	}
 }
