@@ -515,7 +515,7 @@ export async function connectRemoteSites( event: IpcMainInvokeEvent, list: Remot
 			} );
 		} );
 
-		mirrorLegacyWpcomSites( userData, currentUserId );
+		mirrorLegacyWpcomSites( userData, currentUserId ?? undefined );
 		await saveUserData( userData );
 	} finally {
 		await unlockAppdata();
@@ -538,7 +538,7 @@ export async function disconnectRemoteSites(
 			);
 		} );
 
-		mirrorLegacyWpcomSites( userData, currentUserId );
+		mirrorLegacyWpcomSites( userData, currentUserId ?? undefined );
 		await saveUserData( userData );
 	} finally {
 		await unlockAppdata();
@@ -575,7 +575,7 @@ export async function updateConnectedRemoteSites(
 			}
 		} );
 
-		mirrorLegacyWpcomSites( userData, currentUserId );
+		mirrorLegacyWpcomSites( userData, currentUserId ?? undefined );
 		await saveUserData( userData );
 	} finally {
 		await unlockAppdata();

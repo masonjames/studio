@@ -216,7 +216,7 @@ export const wpcomSitesApi = createApi( {
 			],
 		} ),
 		getWpComSites: builder.query< SyncSite[], { connectedSiteIds?: number[]; userId?: number } >( {
-			queryFn: async ( { connectedSiteIds } ) => {
+			queryFn: async ( { connectedSiteIds, userId } ) => {
 				const wpcomClient = getWpcomClient();
 				if ( ! wpcomClient ) {
 					return { error: { status: 401, data: 'Not authenticated' } };
