@@ -876,11 +876,15 @@ def distribute_builds(
   end
 
   unless DRY_RUN
-    buildkite_annotate(
-      context: 'cdn-link',
-      style: 'info',
-      message: "🔗 Build available for #{builds_to_upload.each_value.map { |build| "[#{build[:name]}](#{build[:cdn_url]})" }.join(', ')}"
-    )
+    if ENV['BUILDKITE_AGENT_ACCESS_TOKEN'].to_s.empty?
+      UI.message('Skipping Buildkite annotation because BUILDKITE_AGENT_ACCESS_TOKEN is not set')
+    else
+      buildkite_annotate(
+        context: 'cdn-link',
+        style: 'info',
+        message: "🔗 Build available for #{builds_to_upload.each_value.map { |build| "[#{build[:name]}](#{build[:cdn_url]})" }.join(', ')}"
+      )
+    end
   end
 
   # Return the builds data so callers can use them for further processing or messaging.
