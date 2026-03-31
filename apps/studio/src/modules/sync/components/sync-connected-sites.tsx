@@ -298,16 +298,12 @@ const SyncConnectedSitesSectionItem = ( {
 
 	const getPushProgressTooltip = () => {
 		if ( isOffline ) {
-			return __(
-				"You are currently offline. Sync will continue running remotely. We will send you an email once it's completed."
-			);
+			return __( 'You are currently offline. Sync will continue running remotely.' );
 		}
 		if ( pushBackupIsUploading( pushState?.status.key ) ) {
-			return __( 'Push is in progress. We will send you an email when it is completed.' );
+			return __( 'Push is in progress.' );
 		}
-		return __(
-			"The push is in progress and will continue running remotely. We will send you an email once it's completed."
-		);
+		return __( 'The push is in progress and will continue running remotely.' );
 	};
 
 	return (
@@ -386,17 +382,33 @@ const SyncConnectedSitesSectionItem = ( {
 						</div>
 					) }
 					{ isPullError && (
-						<div className="transition-all duration-300 ease-in-out">
+						<div className="transition-all duration-300 ease-in-out flex items-center gap-2">
 							<ClearAction
 								onClick={ () => clearPullState( selectedSite.id, connectedSite.id ) }
 								isError
 							>
-								{ __( 'Error pulling changes' ) }
+								{ __( 'Import failed. Please try again.' ) }
 							</ClearAction>
+							<Button
+								variant="link"
+								className="!text-frame-text hover:!text-frame-theme"
+								onClick={ () => {
+									clearPullState( selectedSite.id, connectedSite.id );
+									void dispatch(
+										syncOperationsThunks.pullSite( {
+											connectedSite,
+											selectedSite,
+										} )
+									);
+								} }
+							>
+								<Icon icon={ cloudDownload } />
+								{ __( 'Retry' ) }
+							</Button>
 						</div>
 					) }
 					{ isPushError && (
-						<div className="transition-all duration-300 ease-in-out">
+						<div className="transition-all duration-300 ease-in-out flex items-center gap-2">
 							<ClearAction
 								onClick={ () =>
 									dispatch(
@@ -408,7 +420,7 @@ const SyncConnectedSitesSectionItem = ( {
 								}
 								isError
 							>
-								{ __( 'Error pushing changes' ) }
+								{ __( 'Push failed. Please try again.' ) }
 							</ClearAction>
 						</div>
 					) }

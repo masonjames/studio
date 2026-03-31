@@ -69,6 +69,7 @@ export async function runWpCliCommand(
 		await setPhpIniEntries( php, {
 			'openssl.cafile': '/tmp/ca-bundle.crt',
 			allow_url_fopen: 1,
+			memory_limit: '512M',
 		} );
 
 		await php.setSpawnHandler( createNoopSpawnHandler() );
