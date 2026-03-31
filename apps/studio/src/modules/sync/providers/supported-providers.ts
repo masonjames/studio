@@ -2,6 +2,7 @@ import type { BridgeBackedRemoteProvider, RemoteProvider } from 'src/modules/syn
 
 export const SUPPORTED_REMOTE_PROVIDER_CLIENTS = [
 	'mainwpBridge',
+	'wpRemote',
 ] as const satisfies readonly BridgeBackedRemoteProvider[];
 
 export type SupportedRemoteProviderClient = ( typeof SUPPORTED_REMOTE_PROVIDER_CLIENTS )[ number ];

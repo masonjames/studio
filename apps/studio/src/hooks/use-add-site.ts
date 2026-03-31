@@ -45,6 +45,10 @@ export interface PathValidationResult {
 	error?: string;
 }
 
+function canPullRemoteSite( site: SyncSite | undefined ) {
+	return Boolean( site?.syncSupport === 'syncable' && site.capabilities.pull );
+}
+
 export function useAddSite() {
 	const { __ } = useI18n();
 	const { createSite, sites } = useSiteDetails();
@@ -54,7 +58,9 @@ export function useAddSite() {
 	const { setSelectedTab } = useContentTabs();
 	const [ fileForImport, setFileForImport ] = useState< File | null >( null );
 	const [ selectedBlueprint, setSelectedBlueprint ] = useState< Blueprint | undefined >();
-	const [ selectedRemoteProvider, setSelectedRemoteProvider ] = useState< RemoteProvider | undefined >();
+	const [ selectedRemoteProvider, setSelectedRemoteProvider ] = useState<
+		RemoteProvider | undefined
+	>();
 	const [ selectedRemoteSite, setSelectedRemoteSite ] = useState< SyncSite | undefined >();
 	const [ blueprintPreferredVersions, setBlueprintPreferredVersions ] = useState<
 		BlueprintPreferredVersions | undefined
@@ -235,6 +241,14 @@ export function useAddSite() {
 	const handleCreateSite = useCallback(
 		async ( formValues: CreateSiteFormValues ) => {
 			try {
+				if ( selectedRemoteSite && ! canPullRemoteSite( selectedRemoteSite ) ) {
+					getIpcApi().showNotification( {
+						title: __( 'Sync unavailable' ),
+						body: __( 'This remote site cannot be pulled into Studio yet.' ),
+					} );
+					return;
+				}
+
 				let usedCustomDomain =
 					formValues.useCustomDomain && formValues.customDomain
 						? formValues.customDomain

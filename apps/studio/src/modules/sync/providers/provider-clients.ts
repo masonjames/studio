@@ -47,7 +47,9 @@ function getBridgeRunningProgress( stage: BridgePullOperation[ 'stage' ], percen
 	return 55 + ( ( percent ?? 0 ) / 100 ) * 5;
 }
 
-const mainwpBridgeClient: RemoteProviderClient = {
+const WP_REMOTE_PULL_NOT_SUPPORTED_MESSAGE = 'WP Remote site pulls are not supported yet.';
+
+const sharedBridgeClient: RemoteProviderClient = {
 	testAccount: testBridgeAccountConnection,
 	listSites: listBridgeSites,
 	async startPull( account, remoteSiteId ) {
@@ -186,8 +188,16 @@ const mainwpBridgeClient: RemoteProviderClient = {
 	downloadPullArtifact: downloadBridgeJobArtifact,
 };
 
+const wpRemoteBridgeClient: RemoteProviderClient = {
+	...sharedBridgeClient,
+	async startPull() {
+		throw new Error( WP_REMOTE_PULL_NOT_SUPPORTED_MESSAGE );
+	},
+};
+
 const REMOTE_PROVIDER_CLIENTS: Record< SupportedRemoteProviderClient, RemoteProviderClient > = {
-	mainwpBridge: mainwpBridgeClient,
+	mainwpBridge: sharedBridgeClient,
+	wpRemote: wpRemoteBridgeClient,
 };
 
 export function getRemoteProviderClient(

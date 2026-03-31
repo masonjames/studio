@@ -661,7 +661,7 @@ describe( 'AddSite', () => {
 		} );
 	} );
 
-	it( 'shows the new external provider lineup with only MainWP selectable today', async () => {
+	it( 'shows the new external provider lineup with WP Remote and MainWP selectable today', async () => {
 		const user = userEvent.setup();
 		renderWithProvider( <AddSite /> );
 
@@ -687,7 +687,7 @@ describe( 'AddSite', () => {
 			);
 
 		expect( providerButtons ).toEqual( [ 'WP Remote', 'MainWP', 'Flywheel', 'WP Engine' ] );
-		expect( wpRemoteButton ).toBeDisabled();
+		expect( wpRemoteButton ).toBeEnabled();
 		expect( mainwpButton ).toBeEnabled();
 		expect( flywheelButton ).toBeDisabled();
 		expect( wpEngineButton ).toBeDisabled();
@@ -696,7 +696,7 @@ describe( 'AddSite', () => {
 
 		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
 		await user.click( wpRemoteButton );
-		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
 		await user.click( mainwpButton );
 		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
 	} );

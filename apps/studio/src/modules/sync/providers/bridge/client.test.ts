@@ -26,6 +26,14 @@ const mainwpAccount: RemoteProviderAccount = {
 	updatedAt: '2026-03-31T00:00:00.000Z',
 };
 
+const wpRemoteAccount: RemoteProviderAccount = {
+	...mainwpAccount,
+	id: 'account-2',
+	provider: 'wpRemote',
+	label: 'WP Remote bridge',
+	supportedProviders: [ 'wpRemote' ],
+};
+
 function jsonResponse( body: unknown, status = 200 ) {
 	return new Response( JSON.stringify( body ), {
 		status,
@@ -89,6 +97,56 @@ describe( 'bridge client provider contract', () => {
 				providerAccountId: 'account-1',
 				name: 'Avenue941',
 				syncSupport: 'syncable',
+			} ),
+		] );
+	} );
+
+	it( 'maps WP Remote bridge sites while keeping pull disabled when the site capabilities say so', async () => {
+		fetchMock
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					ok: true,
+					providerSupport: {
+						mainwpBridge: true,
+						wpRemote: true,
+						flywheel: false,
+						wpEngine: false,
+					},
+				} )
+			)
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					sites: [
+						{
+							id: 'site-2',
+							provider: 'wpRemote',
+							name: 'Seeded Site',
+							activeUrl: 'https://seeded.example.com',
+							urls: [ 'https://seeded.example.com' ],
+							capabilities: {
+								pull: false,
+								backupCreate: false,
+								backupsRead: false,
+							},
+						},
+					],
+				} )
+			);
+
+		const result = await listBridgeSites( wpRemoteAccount );
+
+		expect( result.sites ).toEqual( [
+			expect.objectContaining( {
+				id: 'wpRemote:site-2',
+				remoteSiteId: 'site-2',
+				provider: 'wpRemote',
+				providerLabel: 'WP Remote',
+				syncSupport: 'unsupported',
+				capabilities: expect.objectContaining( {
+					pull: false,
+					backupCreate: false,
+					backupsRead: false,
+				} ),
 			} ),
 		] );
 	} );

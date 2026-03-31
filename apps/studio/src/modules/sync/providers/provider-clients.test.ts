@@ -25,6 +25,13 @@ const mainwpAccount: RemoteProviderAccount = {
 	updatedAt: '2026-03-31T00:00:00.000Z',
 };
 
+const wpRemoteAccount: RemoteProviderAccount = {
+	...mainwpAccount,
+	id: 'account-2',
+	provider: 'wpRemote',
+	label: 'WP Remote bridge',
+};
+
 describe( 'getRemoteProviderClient', () => {
 	beforeEach( () => {
 		vi.clearAllMocks();
@@ -106,9 +113,22 @@ describe( 'getRemoteProviderClient', () => {
 		).rejects.toThrow( 'Remote pull operation does not match the selected provider account.' );
 	} );
 
-	it( 'throws for unsupported providers until their adapters exist', () => {
-		expect( () => getRemoteProviderClient( 'wpRemote' ) ).toThrow(
-			'This remote provider is not supported yet.'
-		);
+	it( 'returns the shared bridge client for WP Remote', () => {
+		const client = getRemoteProviderClient( 'wpRemote' );
+
+		expect( client ).toMatchObject( {
+			testAccount: expect.any( Function ),
+			listSites: expect.any( Function ),
+			startPull: expect.any( Function ),
+			pollPull: expect.any( Function ),
+			downloadPullArtifact: expect.any( Function ),
+		} );
+	} );
+
+	it( 'blocks WP Remote pull operations during the discovery-only Phase 5 slice', async () => {
+		await expect(
+			getRemoteProviderClient( 'wpRemote' ).startPull( wpRemoteAccount, 'site-2' )
+		).rejects.toThrow( 'WP Remote site pulls are not supported yet.' );
+		expect( createBridgeBackupJob ).not.toHaveBeenCalled();
 	} );
 } );

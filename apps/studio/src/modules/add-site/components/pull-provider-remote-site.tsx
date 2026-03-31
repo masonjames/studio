@@ -5,6 +5,7 @@ import {
 	getExternalRemoteProvider,
 	type RemoteProviderSiteSelector,
 } from 'src/modules/sync/providers/registry';
+import WpRemoteSiteSelector from 'src/modules/sync/providers/wpremote/site-selector';
 import type { RemoteProvider, SyncSite } from 'src/modules/sync/types';
 
 interface PullProviderRemoteSiteProps {
@@ -23,6 +24,7 @@ const PROVIDER_SITE_SELECTORS: Partial<
 	>
 > = {
 	mainwpBridge: MainwpBridgeSiteSelector,
+	wpRemote: WpRemoteSiteSelector,
 };
 
 export default function PullProviderRemoteSite( {

@@ -3,7 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import nock from 'nock';
 import { Provider } from 'react-redux';
 import { vi } from 'vitest';
-import { useAddSite, CreateSiteFormValues } from 'src/hooks/use-add-site';
+import { useAddSite, type CreateSiteFormValues } from 'src/hooks/use-add-site';
 import { useAuth } from 'src/hooks/use-auth';
 import { useContentTabs } from 'src/hooks/use-content-tabs';
 import { useSiteDetails } from 'src/hooks/use-site-details';
@@ -38,6 +38,7 @@ vi.mock( 'src/hooks/use-import-export', () => ( {
 
 const mockConnectWpcomSites = vi.fn().mockResolvedValue( undefined );
 const mockShowOpenFolderDialog = vi.fn();
+const mockShowNotification = vi.fn();
 const mockGenerateProposedSitePath = vi.fn().mockResolvedValue( {
 	path: '/default/path',
 	name: 'Default Site',
@@ -50,7 +51,7 @@ vi.mock( 'src/lib/get-ipc-api', () => ( {
 	getIpcApi: () => ( {
 		generateProposedSitePath: mockGenerateProposedSitePath,
 		showOpenFolderDialog: mockShowOpenFolderDialog,
-		showNotification: vi.fn(),
+		showNotification: mockShowNotification,
 		getAllCustomDomains: vi.fn().mockResolvedValue( [] ),
 		connectWpcomSites: mockConnectWpcomSites,
 		getConnectedWpcomSites: vi.fn().mockResolvedValue( [] ),
@@ -64,6 +65,34 @@ const renderHookWithProvider = ( hook: () => ReturnType< typeof useAddSite > ) =
 	} );
 };
 
+function createRemoteSite( overrides: Partial< SyncSite > = {} ): SyncSite {
+	return {
+		id: 'wpRemote:site-1',
+		remoteSiteId: 'site-1',
+		provider: 'wpRemote',
+		providerLabel: 'WP Remote',
+		providerAccountId: 'account-1',
+		localSiteId: '',
+		name: 'Remote Site',
+		url: 'https://example.com',
+		isStaging: false,
+		isPressable: false,
+		environmentType: null,
+		syncSupport: 'syncable',
+		capabilities: {
+			pull: true,
+			push: false,
+			backupCreate: false,
+			backupsRead: false,
+			importCreate: false,
+			restoreCreate: false,
+		},
+		lastPullTimestamp: null,
+		lastPushTimestamp: null,
+		...overrides,
+	};
+}
+
 describe( 'useAddSite', () => {
 	const mockCreateSite = vi.fn();
 	const mockUpdateSite = vi.fn();
@@ -76,6 +105,7 @@ describe( 'useAddSite', () => {
 		mockPullSiteThunk.mockImplementation( () => ( {
 			type: 'syncOperations/pullSite',
 		} ) );
+		mockShowNotification.mockReset();
 
 		mockGenerateProposedSitePath.mockResolvedValue( {
 			path: '/default/path',
@@ -200,18 +230,7 @@ describe( 'useAddSite', () => {
 	} );
 
 	it( 'should connect and start pulling when a remote site is selected', async () => {
-		const remoteSite: SyncSite = {
-			id: 123,
-			localSiteId: 'remote-site-id',
-			name: 'Remote Site',
-			url: 'https://example.com',
-			isStaging: false,
-			isPressable: false,
-			environmentType: null,
-			syncSupport: 'syncable',
-			lastPullTimestamp: null,
-			lastPushTimestamp: null,
-		};
+		const remoteSite = createRemoteSite();
 
 		const createdSite = {
 			id: 'local-id',
@@ -261,5 +280,47 @@ describe( 'useAddSite', () => {
 			options: { optionsToSync: [ 'all' ] },
 		} );
 		expect( mockSetSelectedTab ).toHaveBeenCalledWith( 'sync' );
+	} );
+
+	it( 'should block unsupported remote sites before any local site is created', async () => {
+		const { result } = renderHookWithProvider( () => useAddSite() );
+
+		act( () => {
+			result.current.setSelectedRemoteSite(
+				createRemoteSite( {
+					syncSupport: 'unsupported',
+					capabilities: {
+						pull: false,
+						push: false,
+						backupCreate: false,
+						backupsRead: false,
+						importCreate: false,
+						restoreCreate: false,
+					},
+				} )
+			);
+		} );
+
+		const formValues: CreateSiteFormValues = {
+			siteName: 'Unsupported Remote Site',
+			sitePath: '/test/path',
+			phpVersion: '8.3',
+			wpVersion: 'latest',
+			useCustomDomain: false,
+			customDomain: null,
+			enableHttps: false,
+		};
+
+		await act( async () => {
+			await result.current.handleCreateSite( formValues );
+		} );
+
+		expect( mockCreateSite ).not.toHaveBeenCalled();
+		expect( mockConnectWpcomSites ).not.toHaveBeenCalled();
+		expect( mockPullSiteThunk ).not.toHaveBeenCalled();
+		expect( mockShowNotification ).toHaveBeenCalledWith( {
+			title: 'Sync unavailable',
+			body: 'This remote site cannot be pulled into Studio yet.',
+		} );
 	} );
 } );

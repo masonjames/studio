@@ -2,7 +2,7 @@ import type { RemoteProvider } from 'src/modules/sync/types';
 
 export type RemoteProviderAvailability = 'available' | 'discovery' | 'disabled';
 
-export type RemoteProviderSiteSelector = 'mainwpBridge' | 'none';
+export type RemoteProviderSiteSelector = 'mainwpBridge' | 'wpRemote' | 'none';
 
 export type RemoteProviderDefinition = {
 	id: Exclude< RemoteProvider, 'wpcom' >;
@@ -19,11 +19,10 @@ export const EXTERNAL_REMOTE_PROVIDER_DEFINITIONS: RemoteProviderDefinition[] = 
 		id: 'wpRemote',
 		label: 'WP Remote',
 		description:
-			'Our next shared-bridge integration for discovering and pulling remotely managed WordPress sites.',
+			'Connect through a bridge that has validated WP Remote registrations and browse the sites it can expose to Studio.',
 		providerLabel: 'WP Remote',
-		availability: 'discovery',
-		availabilityLabel: 'Planned next',
-		siteSelector: 'none',
+		availability: 'available',
+		siteSelector: 'wpRemote',
 	},
 	{
 		id: 'mainwpBridge',

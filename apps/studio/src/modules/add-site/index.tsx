@@ -204,7 +204,7 @@ function NavigationContent( props: NavigationContentProps ) {
 	}, [ goTo, selectedRemoteProvider, setSelectedRemoteSite ] );
 
 	const handlePullRemoteProviderSiteContinue = useCallback( async () => {
-		if ( selectedRemoteSite ) {
+		if ( selectedRemoteSite?.syncSupport === 'syncable' ) {
 			const availableName = await findAvailableSiteName( selectedRemoteSite.name );
 			const { path } = await onSiteNameChange( availableName );
 			setRemoteSiteName( availableName );
@@ -503,7 +503,7 @@ function NavigationContent( props: NavigationContentProps ) {
 				canSubmitBackup={ !! fileForImport }
 				canSubmitPullRemote={ !! selectedRemoteSite }
 				canSubmitPullRemoteProviderSelect={ !! selectedRemoteProvider }
-				canSubmitPullRemoteProviderSite={ !! selectedRemoteSite }
+				canSubmitPullRemoteProviderSite={ selectedRemoteSite?.syncSupport === 'syncable' }
 				canSubmitCreate={ canSubmit }
 			/>
 		</>
