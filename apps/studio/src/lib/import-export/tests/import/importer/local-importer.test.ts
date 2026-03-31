@@ -104,6 +104,7 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 			const importer = new LocalImporter( { ...mockBackupContents, metaFile: undefined } );
 			vi.mocked( fs.promises.mkdir ).mockResolvedValue( undefined );
 			vi.mocked( fs.promises.copyFile ).mockResolvedValue( undefined );
+			vi.mocked( fs.promises.readFile ).mockResolvedValue( '' );
 
 			const result = await importer.import( mockStudioSitePath, mockStudioSiteId );
 
@@ -111,7 +112,10 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
 			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 5 ); // One for each wp-content file + wp-config.php
-			expect( fs.promises.readFile ).not.toHaveBeenCalled();
+			// readFile is called for SQL file preparation (MySQL DDL stripping) but not for meta file
+			for ( const call of vi.mocked( fs.promises.readFile ).mock.calls ) {
+				expect( call[ 0 ] ).not.toContain( 'meta' );
+			}
 		} );
 
 		it( 'should handle JSON parse error in meta file', async () => {

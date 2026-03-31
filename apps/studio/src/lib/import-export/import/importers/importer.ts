@@ -101,8 +101,22 @@ abstract class BaseImporter extends EventEmitter implements Importer {
 		this.emit( ImportEvents.IMPORT_DATABASE_COMPLETE );
 	}
 
-	protected async prepareSqlFile( _tmpPath: string ): Promise< void > {
-		// This method can be overridden by subclasses to prepare the SQL file before import.
+	protected async prepareSqlFile( tmpPath: string ): Promise< void > {
+		// Strip MySQL-specific DDL statements that are incompatible with SQLite.
+		// This handles dumps from mysqldump (e.g., bridge exports) that contain
+		// CREATE DATABASE, USE, or other MySQL-only syntax.
+		const mysqlDdlPattern =
+			/^\s*(CREATE\s+DATABASE|USE\s+`|DROP\s+DATABASE|ALTER\s+DATABASE|\/\*![\d]+\s|LOCK\s+TABLES|UNLOCK\s+TABLES|SET\s+@@)/i;
+
+		const content = await fs.promises.readFile( tmpPath, 'utf8' );
+		const filtered = content
+			.split( '\n' )
+			.filter( ( line ) => ! mysqlDdlPattern.test( line ) )
+			.join( '\n' );
+
+		if ( filtered.length !== content.length ) {
+			await fs.promises.writeFile( tmpPath, filtered, 'utf8' );
+		}
 	}
 
 	protected async safelyDeletePath( path: string ): Promise< void > {
@@ -416,6 +430,10 @@ export class WpressImporter extends BaseBackupImporter {
 	}
 
 	protected async prepareSqlFile( tmpPath: string ): Promise< void > {
+		// First strip MySQL-specific DDL (base class handling)
+		await super.prepareSqlFile( tmpPath );
+
+		// Then handle wpress-specific SERVMASK_PREFIX replacement
 		const tempOutputPath = `${ tmpPath }.tmp`;
 		const readStream = fs.createReadStream( tmpPath, 'utf8' );
 		const writeStream = fs.createWriteStream( tempOutputPath, 'utf8' );

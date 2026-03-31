@@ -72,7 +72,7 @@ if ( ! process.env.IS_DEV_BUILD ) {
 	const { sentryRelease, isDevEnvironment } = getSentryReleaseInfo( app.getVersion() );
 
 	Sentry.init( {
-		dsn: 'https://97693275b2716fb95048c6d12f4318cf@o248881.ingest.sentry.io/4506612776501248',
+		dsn: 'https://b8feadc8c51069a74ec8fdf080afd70b@o4507874174238720.ingest.us.sentry.io/4511136640073728',
 		debug: true,
 		enabled: ! isDevEnvironment,
 		release: sentryRelease,

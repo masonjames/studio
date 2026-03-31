@@ -101,8 +101,8 @@ export default defineConfig({
 				!! process.env.SENTRY_AUTH_TOKEN &&
 				sentryVitePlugin( {
 					authToken: process.env.SENTRY_AUTH_TOKEN,
-					org: 'a8c',
-					project: 'studio',
+					org: 'mason-james-llc',
+					project: 'wp-studio',
 					release: {
 						name: sentryRelease,
 					},
