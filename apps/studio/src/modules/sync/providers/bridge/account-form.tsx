@@ -2,15 +2,19 @@ import {
 	Notice,
 	SelectControl,
 	TextControl,
-	__experimentalVStack as VStack,
 	__experimentalHStack as HStack,
 	__experimentalText as Text,
+	__experimentalVStack as VStack,
 } from '@wordpress/components';
 import { useI18n } from '@wordpress/react-i18n';
 import Button from 'src/components/button';
-import type { RemoteProviderAccount, UpsertRemoteProviderAccountInput } from 'src/modules/sync/types';
+import type {
+	BridgeBackedRemoteProvider,
+	RemoteProviderAccount,
+	UpsertRemoteProviderAccountInput,
+} from 'src/modules/sync/types';
 
-type MainwpBridgeAccountFormValues = {
+export type BridgeAccountFormValues = {
 	id?: string;
 	label: string;
 	bridgeUrl: string;
@@ -19,23 +23,37 @@ type MainwpBridgeAccountFormValues = {
 	mutateToken: string;
 };
 
-interface MainwpBridgeAccountFormProps {
-	value: MainwpBridgeAccountFormValues;
-	onChange: ( value: MainwpBridgeAccountFormValues ) => void;
+type BridgeAccountFormStrings = {
+	addHeading?: string;
+	editHeading?: string;
+	labelPlaceholder?: string;
+	bridgeUrlPlaceholder?: string;
+	saveLabel?: string;
+	saveChangesLabel?: string;
+	resetLabel?: string;
+	deleteLabel?: string;
+};
+
+interface BridgeAccountFormProps {
+	provider: BridgeBackedRemoteProvider;
+	value: BridgeAccountFormValues;
+	onChange: ( value: BridgeAccountFormValues ) => void;
 	onSave: ( input: UpsertRemoteProviderAccountInput ) => Promise< void > | void;
 	onDelete?: ( accountId: string ) => Promise< void > | void;
 	onReset: () => void;
 	isSaving?: boolean;
 	error?: string;
 	selectedAccount?: RemoteProviderAccount;
+	strings?: BridgeAccountFormStrings;
 }
 
 export function buildBridgeAccountInput(
-	value: MainwpBridgeAccountFormValues
+	provider: BridgeBackedRemoteProvider,
+	value: BridgeAccountFormValues
 ): UpsertRemoteProviderAccountInput {
 	return {
 		id: value.id,
-		provider: 'mainwpBridge',
+		provider,
 		label: value.label,
 		bridgeUrl: value.bridgeUrl,
 		readToken: value.readToken,
@@ -44,7 +62,7 @@ export function buildBridgeAccountInput(
 	};
 }
 
-export function createDefaultBridgeAccountFormValues(): MainwpBridgeAccountFormValues {
+export function createDefaultBridgeAccountFormValues(): BridgeAccountFormValues {
 	return {
 		label: '',
 		bridgeUrl: '',
@@ -56,7 +74,7 @@ export function createDefaultBridgeAccountFormValues(): MainwpBridgeAccountFormV
 
 export function bridgeAccountToFormValues(
 	account: RemoteProviderAccount
-): MainwpBridgeAccountFormValues {
+): BridgeAccountFormValues {
 	return {
 		id: account.id,
 		label: account.label,
@@ -67,7 +85,8 @@ export function bridgeAccountToFormValues(
 	};
 }
 
-export default function MainwpBridgeAccountForm( {
+export default function BridgeAccountForm( {
+	provider,
 	value,
 	onChange,
 	onSave,
@@ -76,13 +95,24 @@ export default function MainwpBridgeAccountForm( {
 	isSaving = false,
 	error,
 	selectedAccount,
-}: MainwpBridgeAccountFormProps ) {
+	strings,
+}: BridgeAccountFormProps ) {
 	const { __ } = useI18n();
+	const copy = {
+		addHeading: strings?.addHeading ?? __( 'Add bridge account' ),
+		editHeading: strings?.editHeading ?? __( 'Edit bridge account' ),
+		labelPlaceholder: strings?.labelPlaceholder ?? __( 'Production bridge' ),
+		bridgeUrlPlaceholder: strings?.bridgeUrlPlaceholder ?? 'https://wp-manager.masonjames.com',
+		saveLabel: strings?.saveLabel ?? __( 'Save account' ),
+		saveChangesLabel: strings?.saveChangesLabel ?? __( 'Save changes' ),
+		resetLabel: strings?.resetLabel ?? __( 'Reset' ),
+		deleteLabel: strings?.deleteLabel ?? __( 'Delete account' ),
+	};
 
 	return (
 		<VStack spacing={ 3 } alignment="top">
 			<Text className="text-sm font-medium text-frame-text">
-				{ selectedAccount ? __( 'Edit bridge account' ) : __( 'Add bridge account' ) }
+				{ selectedAccount ? copy.editHeading : copy.addHeading }
 			</Text>
 			{ error && (
 				<Notice status="error" isDismissible={ false }>
@@ -92,14 +122,14 @@ export default function MainwpBridgeAccountForm( {
 			<TextControl
 				label={ __( 'Label' ) }
 				value={ value.label }
-				onChange={ label => onChange( { ...value, label } ) }
-				placeholder={ __( 'Production bridge' ) }
+				onChange={ ( label ) => onChange( { ...value, label } ) }
+				placeholder={ copy.labelPlaceholder }
 			/>
 			<TextControl
 				label={ __( 'Bridge URL' ) }
 				value={ value.bridgeUrl }
-				onChange={ bridgeUrl => onChange( { ...value, bridgeUrl } ) }
-				placeholder="https://wp-manager.masonjames.com"
+				onChange={ ( bridgeUrl ) => onChange( { ...value, bridgeUrl } ) }
+				placeholder={ copy.bridgeUrlPlaceholder }
 			/>
 			<SelectControl
 				label={ __( 'Token mode' ) }
@@ -108,7 +138,7 @@ export default function MainwpBridgeAccountForm( {
 					{ label: __( 'Use one token for read and write' ), value: 'single' },
 					{ label: __( 'Use separate read and write tokens' ), value: 'split' },
 				] }
-				onChange={ nextValue =>
+				onChange={ ( nextValue ) =>
 					onChange( {
 						...value,
 						tokenMode: nextValue as 'single' | 'split',
@@ -121,7 +151,7 @@ export default function MainwpBridgeAccountForm( {
 			<TextControl
 				label={ __( 'Read token' ) }
 				value={ value.readToken }
-				onChange={ readToken =>
+				onChange={ ( readToken ) =>
 					onChange( {
 						...value,
 						readToken,
@@ -134,14 +164,14 @@ export default function MainwpBridgeAccountForm( {
 				<TextControl
 					label={ __( 'Write token' ) }
 					value={ value.mutateToken }
-					onChange={ mutateToken => onChange( { ...value, mutateToken } ) }
+					onChange={ ( mutateToken ) => onChange( { ...value, mutateToken } ) }
 					type="password"
 				/>
 			) }
 			<HStack spacing={ 3 } alignment="left">
 				<Button
 					variant="primary"
-					onClick={ () => onSave( buildBridgeAccountInput( value ) ) }
+					onClick={ () => onSave( buildBridgeAccountInput( provider, value ) ) }
 					disabled={
 						isSaving ||
 						! value.label.trim() ||
@@ -150,10 +180,10 @@ export default function MainwpBridgeAccountForm( {
 						( value.tokenMode === 'split' && ! value.mutateToken.trim() )
 					}
 				>
-					{ selectedAccount ? __( 'Save changes' ) : __( 'Save account' ) }
+					{ selectedAccount ? copy.saveChangesLabel : copy.saveLabel }
 				</Button>
 				<Button variant="tertiary" onClick={ onReset } disabled={ isSaving }>
-					{ __( 'Reset' ) }
+					{ copy.resetLabel }
 				</Button>
 				{ selectedAccount?.id && onDelete && (
 					<Button
@@ -161,7 +191,7 @@ export default function MainwpBridgeAccountForm( {
 						onClick={ () => onDelete( selectedAccount.id ) }
 						disabled={ isSaving }
 					>
-						{ __( 'Delete account' ) }
+						{ copy.deleteLabel }
 					</Button>
 				) }
 			</HStack>

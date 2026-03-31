@@ -16,7 +16,9 @@ export type SyncSupport =
 	| 'deleted'
 	| 'missing-permissions';
 
-export type RemoteProvider = 'wpcom' | 'mainwpBridge' | 'wpRemote' | 'flywheel' | 'wpEngine';
+export type BridgeBackedRemoteProvider = 'mainwpBridge' | 'wpRemote' | 'flywheel' | 'wpEngine';
+
+export type RemoteProvider = 'wpcom' | BridgeBackedRemoteProvider;
 
 export type RemoteSiteCapabilities = {
 	pull: boolean;
@@ -49,18 +51,20 @@ export type SyncSite = {
 
 export type RemoteProviderAccount = {
 	id: string;
-	provider: 'mainwpBridge';
+	provider: BridgeBackedRemoteProvider;
 	label: string;
 	bridgeUrl: string;
 	tokenMode: 'single' | 'split';
 	readToken: string;
 	mutateToken: string;
+	supportedProviders?: BridgeBackedRemoteProvider[];
+	lastValidatedAt?: string;
 	createdAt: string;
 	updatedAt: string;
 };
 
 export type TestRemoteProviderAccountInput = {
-	provider: 'mainwpBridge';
+	provider: BridgeBackedRemoteProvider;
 	bridgeUrl: string;
 	readToken: string;
 	mutateToken?: string;
@@ -80,7 +84,7 @@ export type TestRemoteProviderAccountResult = {
 
 export type UpsertRemoteProviderAccountInput = {
 	id?: string;
-	provider: 'mainwpBridge';
+	provider: BridgeBackedRemoteProvider;
 	label: string;
 	bridgeUrl: string;
 	readToken: string;
@@ -94,8 +98,9 @@ export type RemoteProviderSiteListResult = {
 	routeSupport?: TestRemoteProviderAccountResult[ 'routeSupport' ];
 };
 
-export type MainwpBridgePullOperation = {
-	provider: 'mainwpBridge';
+export type BridgePullOperation = {
+	kind: 'bridge';
+	provider: BridgeBackedRemoteProvider;
 	providerAccountId: string;
 	remoteSiteId: string;
 	stage: 'backup' | 'backupManifestLookup' | 'export';
@@ -105,7 +110,7 @@ export type MainwpBridgePullOperation = {
 	manifestLookupAttempts?: number;
 };
 
-export type RemotePullOperation = MainwpBridgePullOperation;
+export type RemotePullOperation = BridgePullOperation;
 
 export type RemotePullUpdate =
 	| {
@@ -135,9 +140,13 @@ export const buildRemoteSiteKey = ( provider: RemoteProvider, remoteSiteId: stri
 export const isWpcomSyncSite = ( site: Pick< SyncSite, 'provider' > | undefined | null ): boolean =>
 	Boolean( site && site.provider === 'wpcom' );
 
+export const isBridgeBackedRemoteProvider = (
+	provider: RemoteProvider | undefined | null
+): provider is BridgeBackedRemoteProvider => Boolean( provider && provider !== 'wpcom' );
+
 export const isExternalHostingSyncSite = (
 	site: Pick< SyncSite, 'provider' > | undefined | null
-): boolean => Boolean( site && site.provider !== 'wpcom' );
+): boolean => Boolean( site && isBridgeBackedRemoteProvider( site.provider ) );
 
 export const getWpcomNumericSiteId = (
 	site: Pick< SyncSite, 'provider' | 'legacyNumericId' | 'remoteSiteId' >

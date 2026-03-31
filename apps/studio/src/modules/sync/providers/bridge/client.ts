@@ -1,9 +1,10 @@
+import { app } from 'electron';
 import fs from 'fs';
 import nodePath from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { app } from 'electron';
 import { getSyncBackupTempPath } from 'src/lib/get-sync-backup-temp-path';
+import { getExternalRemoteProvider } from 'src/modules/sync/providers/registry';
 import {
 	buildRemoteSiteKey,
 	type RemoteProviderAccount,
@@ -16,12 +17,15 @@ import {
 	bridgeJobResponseSchema,
 	bridgeSitesResponseSchema,
 	type BridgeBackupManifest,
-	type BridgeJob,
 	type BridgeHealthResponse,
+	type BridgeJob,
 	type PublicBridgeSite,
 } from './schemas';
 
-type MainwpBridgeAccount = Extract< RemoteProviderAccount, { provider: 'mainwpBridge' } >;
+export type BridgeAccountConnectionResult = {
+	normalized: ReturnType< typeof normalizeBridgeAccountInput >;
+	health: BridgeHealthResponse;
+};
 
 function isAllowedInsecureHost( host: string ) {
 	return host === 'localhost' || host === '127.0.0.1';
@@ -29,7 +33,10 @@ function isAllowedInsecureHost( host: string ) {
 
 export function normalizeBridgeUrl( value: string ): string {
 	const parsed = new URL( value.trim() );
-	if ( parsed.protocol !== 'https:' && !( parsed.protocol === 'http:' && isAllowedInsecureHost( parsed.hostname ) ) ) {
+	if (
+		parsed.protocol !== 'https:' &&
+		! ( parsed.protocol === 'http:' && isAllowedInsecureHost( parsed.hostname ) )
+	) {
 		throw new Error( 'Bridge URL must use HTTPS unless it targets localhost.' );
 	}
 
@@ -67,7 +74,7 @@ async function parseResponse( response: Response ): Promise< unknown > {
 	return response.text();
 }
 
-async function requestJson<T>(
+async function requestJson< T >(
 	account: { bridgeUrl: string; readToken: string; mutateToken: string },
 	options: {
 		path: string;
@@ -77,7 +84,7 @@ async function requestJson<T>(
 		signal?: AbortSignal;
 	},
 	schema: { parse: ( value: unknown ) => T }
-): Promise<T> {
+): Promise< T > {
 	const method = options.method ?? 'GET';
 	const token = options.token === 'mutate' ? account.mutateToken : account.readToken;
 	const response = await fetch( `${ account.bridgeUrl }${ options.path }`, {
@@ -94,12 +101,20 @@ async function requestJson<T>(
 
 	if ( ! response.ok ) {
 		const message =
-			typeof parsed === 'object' && parsed && 'message' in parsed && typeof parsed.message === 'string'
+			typeof parsed === 'object' &&
+			parsed &&
+			'message' in parsed &&
+			typeof parsed.message === 'string'
 				? parsed.message
 				: `Bridge request failed with status ${ response.status }.`;
 		const error = new Error( message );
 		( error as Error & { code?: string; status?: number } ).status = response.status;
-		if ( typeof parsed === 'object' && parsed && 'error' in parsed && typeof parsed.error === 'string' ) {
+		if (
+			typeof parsed === 'object' &&
+			parsed &&
+			'error' in parsed &&
+			typeof parsed.error === 'string'
+		) {
 			( error as Error & { code?: string } ).code = parsed.error;
 		}
 		throw error;
@@ -135,16 +150,31 @@ function assertBackupsMatchSite( backups: BridgeBackupManifest[], expectedSiteId
 	} );
 }
 
-function toSyncSite( account: MainwpBridgeAccount, site: PublicBridgeSite ): SyncSite {
+function getProviderLabel( account: RemoteProviderAccount ) {
+	return getExternalRemoteProvider( account.provider )?.providerLabel ?? account.provider;
+}
+
+function assertBridgeSiteProvider( account: RemoteProviderAccount ) {
+	if ( account.provider !== 'mainwpBridge' ) {
+		throw new Error(
+			'Bridge site responses must include an explicit provider before non-MainWP providers can reuse this site mapping.'
+		);
+	}
+}
+
+function toSyncSite( account: RemoteProviderAccount, site: PublicBridgeSite ): SyncSite {
+	assertBridgeSiteProvider( account );
 	const canPull = Boolean(
-		site.capabilities.pull && site.capabilities.backupCreate !== false && site.capabilities.backupsRead !== false
+		site.capabilities.pull &&
+			site.capabilities.backupCreate !== false &&
+			site.capabilities.backupsRead !== false
 	);
 
 	return {
-		id: buildRemoteSiteKey( 'mainwpBridge', site.id ),
+		id: buildRemoteSiteKey( account.provider, site.id ),
 		remoteSiteId: site.id,
-		provider: 'mainwpBridge',
-		providerLabel: 'MainWP / Bridge',
+		provider: account.provider,
+		providerLabel: getProviderLabel( account ),
 		providerAccountId: account.id,
 		localSiteId: '',
 		name: site.name,
@@ -168,20 +198,24 @@ function toSyncSite( account: MainwpBridgeAccount, site: PublicBridgeSite ): Syn
 
 export async function testBridgeAccountConnection(
 	input: TestRemoteProviderAccountInput
-): Promise<{ normalized: ReturnType<typeof normalizeBridgeAccountInput>; health: BridgeHealthResponse }> {
+): Promise< BridgeAccountConnectionResult > {
 	const normalized = normalizeBridgeAccountInput( input );
 	const health = await requestJson(
 		normalized,
 		{ path: '/healthz', method: 'GET', token: 'read' },
 		bridgeHealthResponseSchema
 	);
-	await requestJson( normalized, { path: '/v1/sites', method: 'GET', token: 'read' }, bridgeSitesResponseSchema );
+	await requestJson(
+		normalized,
+		{ path: '/v1/sites', method: 'GET', token: 'read' },
+		bridgeSitesResponseSchema
+	);
 	return { normalized, health };
 }
 
 export async function listBridgeSites(
-	account: MainwpBridgeAccount
-): Promise<{ sites: SyncSite[]; health: BridgeHealthResponse }> {
+	account: RemoteProviderAccount
+): Promise< { sites: SyncSite[]; health: BridgeHealthResponse } > {
 	const health = await requestJson(
 		account,
 		{ path: '/healthz', method: 'GET', token: 'read' },
@@ -198,7 +232,7 @@ export async function listBridgeSites(
 	};
 }
 
-export async function createBridgeBackupJob( account: MainwpBridgeAccount, siteId: string ) {
+export async function createBridgeBackupJob( account: RemoteProviderAccount, siteId: string ) {
 	const response = await requestJson(
 		account,
 		{ path: `/v1/sites/${ siteId }/backup`, method: 'POST', token: 'mutate', body: {} },
@@ -208,7 +242,7 @@ export async function createBridgeBackupJob( account: MainwpBridgeAccount, siteI
 	return response.job;
 }
 
-export async function listBridgeBackups( account: MainwpBridgeAccount, siteId: string ) {
+export async function listBridgeBackups( account: RemoteProviderAccount, siteId: string ) {
 	const response = await requestJson(
 		account,
 		{ path: `/v1/sites/${ siteId }/backups`, method: 'GET', token: 'read' },
@@ -219,7 +253,7 @@ export async function listBridgeBackups( account: MainwpBridgeAccount, siteId: s
 }
 
 export async function createBridgeExportJob(
-	account: MainwpBridgeAccount,
+	account: RemoteProviderAccount,
 	siteId: string,
 	backupId: string
 ) {
@@ -237,7 +271,11 @@ export async function createBridgeExportJob(
 	return response.job;
 }
 
-export async function getBridgeJob( account: MainwpBridgeAccount, jobId: string, expectedSiteId: string ) {
+export async function getBridgeJob(
+	account: RemoteProviderAccount,
+	jobId: string,
+	expectedSiteId: string
+) {
 	const response = await requestJson(
 		account,
 		{ path: `/v1/jobs/${ jobId }`, method: 'GET', token: 'read' },
@@ -248,7 +286,7 @@ export async function getBridgeJob( account: MainwpBridgeAccount, jobId: string,
 }
 
 export async function downloadBridgeJobArtifact(
-	account: MainwpBridgeAccount,
+	account: RemoteProviderAccount,
 	jobId: string,
 	operationId: string,
 	signal?: AbortSignal
@@ -269,13 +307,17 @@ export async function downloadBridgeJobArtifact(
 		if ( ! response.ok || ! response.body ) {
 			const parsed = await parseResponse( response );
 			const message =
-				typeof parsed === 'object' && parsed && 'message' in parsed && typeof parsed.message === 'string'
+				typeof parsed === 'object' &&
+				parsed &&
+				'message' in parsed &&
+				typeof parsed.message === 'string'
 					? parsed.message
 					: `Bridge download failed with status ${ response.status }.`;
 			throw new Error( message );
 		}
 
-		await pipeline( Readable.fromWeb( response.body as any ), fs.createWriteStream( filePath ) );
+		const responseBody = response.body as unknown as Parameters< typeof Readable.fromWeb >[ 0 ];
+		await pipeline( Readable.fromWeb( responseBody ), fs.createWriteStream( filePath ) );
 		const sizeBytes = Number.parseInt( response.headers.get( 'content-length' ) ?? '', 10 );
 
 		return {

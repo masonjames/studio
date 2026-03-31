@@ -6,21 +6,22 @@ import { SYNC_PUSH_SIZE_LIMIT_BYTES, SYNC_PUSH_SIZE_LIMIT_GB } from 'src/constan
 import { generateStateId } from 'src/hooks/sync-sites/use-pull-push-states';
 import { getIpcApi } from 'src/lib/get-ipc-api';
 import { getHostnameFromUrl } from 'src/lib/url-utils';
-import { store } from 'src/stores';
+import { hasRemoteProviderClient } from 'src/modules/sync/providers/supported-providers';
 import {
 	getWpcomNumericSiteId,
 	isWpcomSyncSite,
 	type RemotePullOperation,
+	SyncSite,
 } from 'src/modules/sync/types';
+import { store } from 'src/stores';
 import { connectedSitesApi } from 'src/stores/sync/connected-sites';
+import { getWpcomClient } from 'src/stores/wpcom-api';
 import type {
 	PullStateProgressInfo,
 	PushStateProgressInfo,
 } from 'src/hooks/use-sync-states-progress-info';
-import type { SyncSite } from 'src/modules/sync/types';
 import type { AppDispatch, RootState } from 'src/stores';
 import type { SyncOption } from 'src/types';
-import { getWpcomClient } from 'src/stores/wpcom-api';
 
 async function updateSiteTimestamp( {
 	siteId,
@@ -393,7 +394,11 @@ const pushSiteThunk = createTypedAsyncThunk< void, PushSitePayload >(
 		const operationId = generateStateId( selectedSite.id, remoteSiteId );
 		const wpcomRemoteSiteId = getWpcomNumericSiteId( connectedSite );
 
-		if ( ! connectedSite.capabilities.push || ! isWpcomSyncSite( connectedSite ) || ! wpcomRemoteSiteId ) {
+		if (
+			! connectedSite.capabilities.push ||
+			! isWpcomSyncSite( connectedSite ) ||
+			! wpcomRemoteSiteId
+		) {
 			return rejectWithValue( {
 				title: sprintf( __( 'Error pushing to %s' ), connectedSite.name ),
 				message: __( 'Push is not available for this provider yet.' ),
@@ -621,7 +626,7 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 				throw new Error( 'Pull request failed' );
 			}
 
-			if ( connectedSite.provider === 'mainwpBridge' && connectedSite.providerAccountId ) {
+			if ( hasRemoteProviderClient( connectedSite.provider ) && connectedSite.providerAccountId ) {
 				const providerOperation = await getIpcApi().startRemotePull(
 					connectedSite.providerAccountId,
 					connectedSite.remoteSiteId
@@ -670,7 +675,10 @@ type ImportResponse = z.infer< typeof importResponseSchema >;
 
 const pollPushProgressThunk = createTypedAsyncThunk(
 	'syncOperations/pollPushProgress',
-	async ( { selectedSiteId, signal, remoteSiteId }: PollPushProgressPayload, { dispatch, getState, rejectWithValue } ) => {
+	async (
+		{ selectedSiteId, signal, remoteSiteId }: PollPushProgressPayload,
+		{ dispatch, getState, rejectWithValue }
+	) => {
 		const pushStatesProgressInfo = getPushStatesProgressInfo();
 		// condition guarantees currentPushState exists and is not cancelled
 		const currentPushState = syncOperationsSelectors.selectPushState(
@@ -691,9 +699,12 @@ const pollPushProgressThunk = createTypedAsyncThunk(
 		}
 
 		try {
-			const rawResponse = await client.req.get( `/sites/${ wpcomRemoteSiteId }/studio-app/sync/import`, {
-				apiNamespace: 'wpcom/v2',
-			} );
+			const rawResponse = await client.req.get(
+				`/sites/${ wpcomRemoteSiteId }/studio-app/sync/import`,
+				{
+					apiNamespace: 'wpcom/v2',
+				}
+			);
 			const response = importResponseSchema.parse( rawResponse );
 
 			signal.throwIfAborted();
@@ -812,7 +823,10 @@ type PollPullBackupPayload = {
 
 const pollPullBackupThunk = createTypedAsyncThunk(
 	'syncOperations/pollPullBackup',
-	async ( { selectedSiteId, remoteSiteId, signal }: PollPullBackupPayload, { dispatch, getState, rejectWithValue } ) => {
+	async (
+		{ selectedSiteId, remoteSiteId, signal }: PollPullBackupPayload,
+		{ dispatch, getState, rejectWithValue }
+	) => {
 		const pullStatesProgressInfo = getPullStatesProgressInfo();
 		const currentPullState = syncOperationsSelectors.selectPullState(
 			selectedSiteId,
@@ -878,7 +892,9 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 			try {
 				await importDownloadedBackup( filePath );
 			} finally {
-				await getIpcApi().removeSyncBackup( operationId ).catch( () => undefined );
+				await getIpcApi()
+					.removeSyncBackup( operationId )
+					.catch( () => undefined );
 			}
 		};
 
@@ -927,7 +943,7 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 
 				if (
 					typeof update.artifactSizeBytes === 'number' &&
-					!( await confirmLargeBackupPull( update.artifactSizeBytes ) )
+					! ( await confirmLargeBackupPull( update.artifactSizeBytes ) )
 				) {
 					return;
 				}
@@ -998,10 +1014,13 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 				return;
 			}
 
-			const rawResponse = await client.req.get( `/sites/${ wpcomRemoteSiteId }/studio-app/sync/backup`, {
-				apiNamespace: 'wpcom/v2',
-				backup_id: backupId,
-			} );
+			const rawResponse = await client.req.get(
+				`/sites/${ wpcomRemoteSiteId }/studio-app/sync/backup`,
+				{
+					apiNamespace: 'wpcom/v2',
+					backup_id: backupId,
+				}
+			);
 			const response = syncBackupResponseSchema.parse( rawResponse );
 
 			signal.throwIfAborted();
@@ -1015,7 +1034,7 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 
 			if ( downloadUrl ) {
 				const fileSize = await getIpcApi().checkSyncBackupSize( downloadUrl );
-				if ( !( await confirmLargeBackupPull( fileSize ) ) ) {
+				if ( ! ( await confirmLargeBackupPull( fileSize ) ) ) {
 					return;
 				}
 

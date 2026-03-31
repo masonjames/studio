@@ -10,16 +10,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Button from 'src/components/button';
 import { getIpcApi } from 'src/lib/get-ipc-api';
 import { SitesListContent } from 'src/modules/sync/components/sync-sites-modal-selector';
+import BridgeAccountForm, {
+	bridgeAccountToFormValues,
+	createDefaultBridgeAccountFormValues,
+} from '../bridge/account-form';
 import type {
 	RemoteProviderAccount,
 	RemoteProviderSiteListResult,
 	SyncSite,
 	UpsertRemoteProviderAccountInput,
 } from 'src/modules/sync/types';
-import MainwpBridgeAccountForm, {
-	bridgeAccountToFormValues,
-	createDefaultBridgeAccountFormValues,
-} from './account-form';
 
 interface MainwpBridgeSiteSelectorProps {
 	selectedRemoteSite?: SyncSite;
@@ -39,19 +39,19 @@ export default function MainwpBridgeSiteSelector( {
 	const [ isSavingAccount, setIsSavingAccount ] = useState( false );
 	const [ isLoadingSites, setIsLoadingSites ] = useState( false );
 	const [ routeSupport, setRouteSupport ] = useState<
-		RemoteProviderSiteListResult['routeSupport'] | undefined
+		RemoteProviderSiteListResult[ 'routeSupport' ] | undefined
 	>();
 	const [ formValues, setFormValues ] = useState( createDefaultBridgeAccountFormValues() );
 
 	const selectedAccount = useMemo(
-		() => accounts.find( account => account.id === selectedAccountId ),
+		() => accounts.find( ( account ) => account.id === selectedAccountId ),
 		[ accounts, selectedAccountId ]
 	);
 
 	const loadAccounts = useCallback( async () => {
 		const nextAccounts = await getIpcApi().listRemoteProviderAccounts( 'mainwpBridge' );
 		setAccounts( nextAccounts );
-		setSelectedAccountId( current => current ?? nextAccounts[ 0 ]?.id );
+		setSelectedAccountId( ( current ) => current ?? nextAccounts[ 0 ]?.id );
 	}, [] );
 
 	useEffect( () => {
@@ -88,7 +88,7 @@ export default function MainwpBridgeSiteSelector( {
 				const canUseBridgePull = Boolean(
 					result.routeSupport?.backupInventory && result.routeSupport?.export
 				);
-				const normalizedSites = result.sites.map( site => ( {
+				const normalizedSites = result.sites.map( ( site ) => ( {
 					...site,
 					providerAccountId: selectedAccountId,
 					capabilities: {
@@ -102,7 +102,7 @@ export default function MainwpBridgeSiteSelector( {
 				setSites( normalizedSites );
 				if (
 					selectedRemoteSite?.providerAccountId !== selectedAccountId ||
-					! normalizedSites.some( site => site.id === selectedRemoteSite?.id )
+					! normalizedSites.some( ( site ) => site.id === selectedRemoteSite?.id )
 				) {
 					setSelectedRemoteSite( undefined );
 				}
@@ -123,7 +123,13 @@ export default function MainwpBridgeSiteSelector( {
 		return () => {
 			cancelled = true;
 		};
-	}, [ __, selectedAccountId, selectedRemoteSite?.id, selectedRemoteSite?.providerAccountId, setSelectedRemoteSite ] );
+	}, [
+		__,
+		selectedAccountId,
+		selectedRemoteSite?.id,
+		selectedRemoteSite?.providerAccountId,
+		setSelectedRemoteSite,
+	] );
 
 	const handleSaveAccount = useCallback(
 		async ( input: UpsertRemoteProviderAccountInput ) => {
@@ -168,7 +174,7 @@ export default function MainwpBridgeSiteSelector( {
 
 	const handleSiteSelect = useCallback(
 		( siteId: string ) => {
-			const site = sites.find( candidate => candidate.id === siteId );
+			const site = sites.find( ( candidate ) => candidate.id === siteId );
 			setSelectedRemoteSite( site );
 		},
 		[ setSelectedRemoteSite, sites ]
@@ -195,7 +201,7 @@ export default function MainwpBridgeSiteSelector( {
 								{ __( 'Save a bridge account to list your remotely managed sites.' ) }
 							</Text>
 						) : (
-							accounts.map( account => (
+							accounts.map( ( account ) => (
 								<Button
 									key={ account.id }
 									variant={ account.id === selectedAccountId ? 'primary' : 'secondary' }
@@ -210,7 +216,8 @@ export default function MainwpBridgeSiteSelector( {
 							) )
 						) }
 					</VStack>
-					<MainwpBridgeAccountForm
+					<BridgeAccountForm
+						provider="mainwpBridge"
 						value={ formValues }
 						onChange={ setFormValues }
 						onSave={ handleSaveAccount }
@@ -224,6 +231,11 @@ export default function MainwpBridgeSiteSelector( {
 						isSaving={ isSavingAccount }
 						error={ accountError }
 						selectedAccount={ selectedAccount }
+						strings={ {
+							addHeading: __( 'Add MainWP bridge account' ),
+							editHeading: __( 'Edit MainWP bridge account' ),
+							labelPlaceholder: __( 'Production MainWP bridge' ),
+						} }
 					/>
 				</VStack>
 				<VStack className="flex-1 min-w-0" alignment="top" spacing={ 3 }>
