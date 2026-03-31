@@ -129,7 +129,7 @@ export default function AddSiteOptions( { onOptionSelect }: AddSiteOptionsProps 
 			<OptionButton
 				icon={ <Icon icon={ download } size={ 24 } fill="var(--color-frame-theme)" /> }
 				title={ __( 'Pull from another host' ) }
-				description={ __( 'Choose MainWP, Hetzner, or DigitalOcean hosting' ) }
+				description={ __( 'Choose from our supported and planned hosting integrations' ) }
 				onClick={ () => onOptionSelect( 'pullRemoteProvider' ) }
 				disabled={ isOffline }
 				disabledTooltip={ importOfflineMessage }

@@ -1,41 +1,61 @@
 import type { RemoteProvider } from 'src/modules/sync/types';
 
+export type RemoteProviderAvailability = 'available' | 'discovery' | 'disabled';
+
+export type RemoteProviderSiteSelector = 'mainwpBridge' | 'none';
+
 export type RemoteProviderDefinition = {
-	id: RemoteProvider;
+	id: Exclude< RemoteProvider, 'wpcom' >;
 	label: string;
 	description: string;
 	providerLabel: string;
-	available: boolean;
+	availability: RemoteProviderAvailability;
 	availabilityLabel?: string;
+	siteSelector: RemoteProviderSiteSelector;
 };
 
 export const EXTERNAL_REMOTE_PROVIDER_DEFINITIONS: RemoteProviderDefinition[] = [
+	{
+		id: 'wpRemote',
+		label: 'WP Remote',
+		description:
+			'Our next shared-bridge integration for discovering and pulling remotely managed WordPress sites.',
+		providerLabel: 'WP Remote',
+		availability: 'discovery',
+		availabilityLabel: 'Planned next',
+		siteSelector: 'none',
+	},
 	{
 		id: 'mainwpBridge',
 		label: 'MainWP',
 		description: 'Connect through your MainWP-hosted bridge and pull a managed WordPress site.',
 		providerLabel: 'MainWP / Bridge',
-		available: true,
+		availability: 'available',
+		siteSelector: 'mainwpBridge',
 	},
 	{
-		id: 'hetzner',
-		label: 'Hetzner',
-		description: 'Use a Hetzner-backed hosting inventory from the same external-host workflow.',
-		providerLabel: 'Hetzner',
-		available: false,
-		availabilityLabel: 'Coming soon',
+		id: 'flywheel',
+		label: 'Flywheel',
+		description:
+			'Planned provider support for browsing and pulling sites from Flywheel-managed accounts.',
+		providerLabel: 'Flywheel',
+		availability: 'discovery',
+		availabilityLabel: 'Researching',
+		siteSelector: 'none',
 	},
 	{
-		id: 'digitalocean',
-		label: 'DigitalOcean',
-		description: 'Connect DigitalOcean-hosted WordPress sites through the external-host provider layer.',
-		providerLabel: 'DigitalOcean',
-		available: false,
-		availabilityLabel: 'Coming soon',
+		id: 'wpEngine',
+		label: 'WP Engine',
+		description:
+			'Planned provider support for browsing and pulling sites from WP Engine-managed accounts.',
+		providerLabel: 'WP Engine',
+		availability: 'discovery',
+		availabilityLabel: 'Researching',
+		siteSelector: 'none',
 	},
 ];
 
 export const getExternalRemoteProviders = () => EXTERNAL_REMOTE_PROVIDER_DEFINITIONS;
 
 export const getExternalRemoteProvider = ( provider: RemoteProvider ) =>
-	EXTERNAL_REMOTE_PROVIDER_DEFINITIONS.find( definition => definition.id === provider );
+	EXTERNAL_REMOTE_PROVIDER_DEFINITIONS.find( ( definition ) => definition.id === provider );

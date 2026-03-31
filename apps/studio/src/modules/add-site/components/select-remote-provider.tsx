@@ -31,11 +31,12 @@ function ProviderButton( {
 } ) {
 	const { isRTL } = useI18n();
 	const chevron = isRTL() ? chevronLeft : chevronRight;
+	const isSelectable = provider.availability === 'available' && provider.siteSelector !== 'none';
 
 	return (
 		<Tooltip
-			text={ provider.available ? undefined : provider.availabilityLabel }
-			disabled={ provider.available }
+			text={ isSelectable ? undefined : provider.availabilityLabel }
+			disabled={ isSelectable }
 			className="w-full max-w-[520px]"
 		>
 			<HStack
@@ -45,11 +46,11 @@ function ProviderButton( {
 					selected
 						? 'border-frame-theme bg-frame-surface'
 						: 'border-frame-border hover:border-frame-text-secondary hover:bg-frame-surface',
-					! provider.available && 'opacity-60 cursor-not-allowed'
+					! isSelectable && 'opacity-60 cursor-not-allowed'
 				) }
 				alignment="top"
-				onClick={ () => provider.available && onSelect( provider.id ) }
-				disabled={ ! provider.available }
+				onClick={ () => isSelectable && onSelect( provider.id ) }
+				disabled={ ! isSelectable }
 				spacing={ 5 }
 			>
 				<Icon icon={ cloud } size={ 24 } fill="var(--color-frame-theme)" />
@@ -58,7 +59,7 @@ function ProviderButton( {
 						<Heading className="text-[15px]" weight="500">
 							{ provider.label }
 						</Heading>
-						{ ! provider.available && provider.availabilityLabel && (
+						{ ! isSelectable && provider.availabilityLabel && (
 							<Text className="text-xs text-frame-text-secondary">
 								{ provider.availabilityLabel }
 							</Text>
@@ -93,18 +94,18 @@ export default function SelectRemoteProvider( {
 			</Heading>
 			<Text className="text-center text-[15px] font-light text-frame-text-secondary max-w-xl mx-auto">
 				{ __(
-					'Connect a third-party hosting provider to discover and pull a remotely managed WordPress site.'
+					'Choose from our planned provider integrations and continue with the providers that are ready in Studio today.'
 				) }
 			</Text>
 			<VStack className="w-full items-center" spacing={ 3 }>
-				{ providers.map( provider => (
+				{ providers.map( ( provider ) => (
 					<ProviderButton
 						key={ provider.id }
 						provider={ provider }
 						selected={ provider.id === selectedProvider }
 						onSelect={ onSelectProvider }
 					/>
-				) )}
+				) ) }
 			</VStack>
 		</VStack>
 	);

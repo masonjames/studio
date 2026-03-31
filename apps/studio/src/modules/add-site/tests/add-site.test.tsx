@@ -661,6 +661,46 @@ describe( 'AddSite', () => {
 		} );
 	} );
 
+	it( 'shows the new external provider lineup with only MainWP selectable today', async () => {
+		const user = userEvent.setup();
+		renderWithProvider( <AddSite /> );
+
+		await user.click( screen.getByRole( 'button', { name: 'Add site' } ) );
+		await user.click( screen.getByRole( 'button', { name: /Pull from another host/i } ) );
+
+		const wpRemoteButton = screen.getByRole( 'button', { name: /WP Remote/i } );
+		const mainwpButton = screen.getByRole( 'button', { name: /MainWP/i } );
+		const flywheelButton = screen.getByRole( 'button', { name: /Flywheel/i } );
+		const wpEngineButton = screen.getByRole( 'button', { name: /WP Engine/i } );
+		const providerButtons = screen
+			.getAllByRole( 'button' )
+			.filter( ( button ) =>
+				[ 'WP Remote', 'MainWP', 'Flywheel', 'WP Engine' ].some(
+					( label ) => button.textContent?.includes( label )
+				)
+			)
+			.map(
+				( button ) =>
+					[ 'WP Remote', 'MainWP', 'Flywheel', 'WP Engine' ].find(
+						( label ) => button.textContent?.includes( label )
+					) ?? ''
+			);
+
+		expect( providerButtons ).toEqual( [ 'WP Remote', 'MainWP', 'Flywheel', 'WP Engine' ] );
+		expect( wpRemoteButton ).toBeDisabled();
+		expect( mainwpButton ).toBeEnabled();
+		expect( flywheelButton ).toBeDisabled();
+		expect( wpEngineButton ).toBeDisabled();
+		expect( screen.queryByRole( 'button', { name: /Hetzner/i } ) ).not.toBeInTheDocument();
+		expect( screen.queryByRole( 'button', { name: /DigitalOcean/i } ) ).not.toBeInTheDocument();
+
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
+		await user.click( wpRemoteButton );
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
+		await user.click( mainwpButton );
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
+	} );
+
 	it( 'navigates through the external provider pull flow and prefills the site name', async () => {
 		const user = userEvent.setup();
 		mockGenerateProposedSitePath.mockImplementation( async ( siteName: string ) => ( {

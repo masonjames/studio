@@ -16,7 +16,7 @@ export type SyncSupport =
 	| 'deleted'
 	| 'missing-permissions';
 
-export type RemoteProvider = 'wpcom' | 'mainwpBridge' | 'hetzner' | 'digitalocean';
+export type RemoteProvider = 'wpcom' | 'mainwpBridge' | 'wpRemote' | 'flywheel' | 'wpEngine';
 
 export type RemoteSiteCapabilities = {
 	pull: boolean;
@@ -91,7 +91,7 @@ export type UpsertRemoteProviderAccountInput = {
 export type RemoteProviderSiteListResult = {
 	account: RemoteProviderAccount;
 	sites: SyncSite[];
-	routeSupport?: TestRemoteProviderAccountResult['routeSupport'];
+	routeSupport?: TestRemoteProviderAccountResult[ 'routeSupport' ];
 };
 
 export type MainwpBridgePullOperation = {
@@ -113,21 +113,21 @@ export type RemotePullUpdate =
 			operation: RemotePullOperation;
 			progress: number;
 			message: string;
-		}
+	  }
 	| {
 			kind: 'artifact-ready';
 			operation: RemotePullOperation;
 			progress: number;
 			message: string;
 			artifactSizeBytes?: number;
-		}
+	  }
 	| {
 			kind: 'failed';
 			operation: RemotePullOperation;
 			message: string;
 			errorCode?: string;
 			retryable?: boolean;
-		};
+	  };
 
 export const buildRemoteSiteKey = ( provider: RemoteProvider, remoteSiteId: string ): string =>
 	`${ provider }:${ remoteSiteId }`;
