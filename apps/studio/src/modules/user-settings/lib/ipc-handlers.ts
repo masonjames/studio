@@ -6,7 +6,11 @@ import { isInstalled } from 'src/lib/is-installed';
 import { getUserLocaleWithFallback } from 'src/lib/locale-node';
 import { SUPPORTED_EDITORS, SupportedEditor } from 'src/modules/user-settings/lib/editor';
 import { SupportedTerminal } from 'src/modules/user-settings/lib/terminal';
-import { UserSettingsTabName } from 'src/modules/user-settings/user-settings-types';
+import {
+	SiteDirectoryPreferences,
+	UserSettingsTabName,
+} from 'src/modules/user-settings/user-settings-types';
+import { DEFAULT_SITE_PATH } from 'src/storage/paths';
 import { loadUserData, updateAppdata } from 'src/storage/user-data';
 
 export function getInstalledAppsAndTerminals(): InstalledApps {
@@ -88,6 +92,23 @@ export async function getColorScheme(): Promise< 'system' | 'light' | 'dark' > {
 	const colorScheme = userData.colorScheme ?? 'light';
 	nativeTheme.themeSource = colorScheme;
 	return colorScheme;
+}
+
+export async function getSiteDirectoryPreferences(): Promise< SiteDirectoryPreferences > {
+	const userData = await loadUserData();
+	return {
+		sitesDirectoryPath: userData.sitesDirectoryPath || DEFAULT_SITE_PATH,
+		useSiteNameAsFolder: userData.useSiteNameAsFolder ?? false,
+	};
+}
+
+export async function saveSiteDirectoryPreferences(
+	event: IpcMainInvokeEvent,
+	preferences: SiteDirectoryPreferences
+) {
+	const parentWindow = BrowserWindow.fromWebContents( event.sender );
+	sendIpcEventToRendererWithWindow( parentWindow, 'user-preference-changed' );
+	await updateAppdata( preferences );
 }
 
 export function showUserSettings( event: IpcMainInvokeEvent, tabName?: UserSettingsTabName ) {

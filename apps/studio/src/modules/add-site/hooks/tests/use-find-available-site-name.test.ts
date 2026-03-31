@@ -1,10 +1,12 @@
 import { renderHook } from '@testing-library/react';
 import { vi } from 'vitest';
+import { useSiteDetails } from 'src/hooks/use-site-details';
 import { FolderDialogResponse } from 'src/ipc-handlers';
 import { getIpcApi } from 'src/lib/get-ipc-api';
 import { useFindAvailableSiteName } from '../use-find-available-site-name';
 
 vi.mock( 'src/lib/get-ipc-api' );
+vi.mock( 'src/hooks/use-site-details' );
 
 const mockGenerateProposedSitePath =
 	vi.fn< ( siteName: string ) => Promise< FolderDialogResponse > >();
@@ -15,6 +17,10 @@ describe( 'useFindAvailableSiteName', () => {
 		vi.mocked( getIpcApi, { partial: true } ).mockReturnValue( {
 			generateProposedSitePath: mockGenerateProposedSitePath,
 		} );
+		vi.mocked( useSiteDetails, { partial: true } ).mockReturnValue( {
+			sites: [],
+			loadingSites: false,
+		} as ReturnType< typeof useSiteDetails > );
 	} );
 
 	it( 'should return the base name if it is available', async () => {
@@ -32,6 +38,27 @@ describe( 'useFindAvailableSiteName', () => {
 		expect( availableName ).toBe( 'My Site' );
 		expect( mockGenerateProposedSitePath ).toHaveBeenCalledTimes( 1 );
 		expect( mockGenerateProposedSitePath ).toHaveBeenCalledWith( 'My Site' );
+	} );
+
+	it( 'should skip names already used by Studio sites', async () => {
+		vi.mocked( useSiteDetails, { partial: true } ).mockReturnValue( {
+			sites: [ { name: 'My Site' } ],
+			loadingSites: false,
+		} as ReturnType< typeof useSiteDetails > );
+		mockGenerateProposedSitePath.mockResolvedValue( {
+			path: '/path/to/site-2',
+			name: 'My Site 2',
+			isEmpty: true,
+			isWordPress: false,
+		} );
+
+		const { result } = renderHook( () => useFindAvailableSiteName() );
+
+		const availableName = await result.current( 'My Site' );
+
+		expect( availableName ).toBe( 'My Site 2' );
+		expect( mockGenerateProposedSitePath ).toHaveBeenCalledTimes( 1 );
+		expect( mockGenerateProposedSitePath ).toHaveBeenCalledWith( 'My Site 2' );
 	} );
 
 	it( 'should return "baseName 2" if base name is not available', async () => {

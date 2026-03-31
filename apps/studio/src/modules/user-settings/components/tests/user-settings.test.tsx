@@ -29,6 +29,10 @@ vi.mock( 'src/lib/get-ipc-api', () => ( {
 			terminals: [ 'terminal' ],
 			editors: [ 'vscode' ],
 		} ),
+		getSiteDirectoryPreferences: vi.fn().mockResolvedValue( {
+			sitesDirectoryPath: '/Users/test/Studio',
+			useSiteNameAsFolder: false,
+		} ),
 		isStudioCliInstalled: vi.fn().mockResolvedValue( true ),
 		copyText: vi.fn().mockResolvedValue( undefined ),
 	} ),
@@ -128,6 +132,9 @@ describe( 'UserSettings', () => {
 			await waitFor( () => {
 				expect( screen.getByText( 'General' ) ).toHaveAttribute( 'aria-selected', 'true' );
 				expect( screen.getByText( 'Language' ) ).toBeInTheDocument();
+				expect( screen.getByText( 'New site directory' ) ).toBeInTheDocument();
+				expect( screen.getByRole( 'button', { name: 'Choose folder' } ) ).toBeInTheDocument();
+				expect( screen.getByLabelText( 'Use site name for new folder names' ) ).toBeInTheDocument();
 				expect( screen.getByText( 'Terminal application' ) ).toBeInTheDocument();
 				expect( screen.getByText( 'Studio CLI for terminal' ) ).toBeInTheDocument();
 			} );

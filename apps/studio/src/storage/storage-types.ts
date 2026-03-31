@@ -32,6 +32,8 @@ export interface UserData {
 	preferredTerminal?: SupportedTerminal;
 	preferredEditor?: SupportedEditor;
 	colorScheme?: 'system' | 'light' | 'dark';
+	sitesDirectoryPath?: string;
+	useSiteNameAsFolder?: boolean;
 	betaFeatures?: BetaFeatures;
 	stopSitesOnQuit?: boolean;
 }

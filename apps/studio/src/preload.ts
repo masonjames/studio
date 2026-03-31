@@ -45,8 +45,7 @@ const api: IpcApi = {
 		ipcRendererInvoke( 'copySite', sourceSiteId, newSiteId, siteName ),
 	listRemoteProviderAccounts: ( provider ) =>
 		ipcRendererInvoke( 'listRemoteProviderAccounts', provider ),
-	testRemoteProviderAccount: ( input ) =>
-		ipcRendererInvoke( 'testRemoteProviderAccount', input ),
+	testRemoteProviderAccount: ( input ) => ipcRendererInvoke( 'testRemoteProviderAccount', input ),
 	upsertRemoteProviderAccount: ( input ) =>
 		ipcRendererInvoke( 'upsertRemoteProviderAccount', input ),
 	deleteRemoteProviderAccount: ( accountId ) =>
@@ -169,6 +168,9 @@ const api: IpcApi = {
 	previewColorScheme: ( colorScheme ) => ipcRendererInvoke( 'previewColorScheme', colorScheme ),
 	saveColorScheme: ( colorScheme ) => ipcRendererInvoke( 'saveColorScheme', colorScheme ),
 	getColorScheme: () => ipcRendererInvoke( 'getColorScheme' ),
+	getSiteDirectoryPreferences: () => ipcRendererInvoke( 'getSiteDirectoryPreferences' ),
+	saveSiteDirectoryPreferences: ( preferences ) =>
+		ipcRendererInvoke( 'saveSiteDirectoryPreferences', preferences ),
 	getUserEditor: () => ipcRendererInvoke( 'getUserEditor' ),
 	saveUserEditor: ( editor ) => ipcRendererInvoke( 'saveUserEditor', editor ),
 	comparePaths: ( path1, path2 ) => ipcRendererInvoke( 'comparePaths', path1, path2 ),

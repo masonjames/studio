@@ -7,14 +7,11 @@ import { lockFileAsync, unlockFileAsync } from '@studio/common/lib/lockfile';
 import { getAppConfigLockFilePath } from '@studio/common/lib/well-known-paths';
 import { readFile, writeFile } from 'atomically';
 import { sanitizeUnstructuredData, sanitizeUserpath } from 'src/lib/sanitize-for-logging';
+import { buildRemoteSiteKey, type SyncSite } from 'src/modules/sync/types';
 import { getUserDataFilePath } from 'src/storage/paths';
-import {
-	buildRemoteSiteKey,
-	type SyncSite,
-} from 'src/modules/sync/types';
 import { EMPTY_USER_DATA, type UserData, type WindowBounds } from 'src/storage/storage-types';
 
-function getDefaultCapabilities(): SyncSite['capabilities'] {
+function getDefaultCapabilities(): SyncSite[ 'capabilities' ] {
 	return {
 		pull: true,
 		push: true,
@@ -25,7 +22,29 @@ function getDefaultCapabilities(): SyncSite['capabilities'] {
 	};
 }
 
-function normalizeLegacyWpcomSite( site: any, userId: number ): SyncSite {
+type LegacyWpcomSite = Partial< SyncSite > & {
+	id?: string | number;
+	legacyNumericId?: string | number;
+	remoteSiteId?: string | number;
+	providerLabel?: string;
+	wpcomUserId?: number;
+	localSiteId?: string;
+	name?: string;
+	url?: string;
+	isStaging?: boolean;
+	isPressable?: boolean;
+	environmentType?: string | null;
+	syncSupport?: SyncSite[ 'syncSupport' ];
+	capabilities?: SyncSite[ 'capabilities' ];
+	lastPullTimestamp?: string | null;
+	lastPushTimestamp?: string | null;
+};
+
+type LegacyUserData = Partial< UserData > & {
+	connectedWpcomSites?: Record< string, LegacyWpcomSite[] >;
+};
+
+function normalizeLegacyWpcomSite( site: LegacyWpcomSite | undefined, userId: number ): SyncSite {
 	const remoteSiteId = String( site?.legacyNumericId ?? site?.remoteSiteId ?? site?.id ?? '' );
 	const syncSupport = site?.syncSupport ?? 'already-connected';
 
@@ -52,19 +71,24 @@ function normalizeLegacyWpcomSite( site: any, userId: number ): SyncSite {
 	};
 }
 
-function normalizeUserData( parsed: any ): UserData {
-	const { siteMetadata, connectedRemoteSites, connectedWpcomSites, remoteProviderAccounts, ...data } =
-		parsed ?? {};
+function normalizeUserData( parsed: unknown ): UserData {
+	const {
+		siteMetadata,
+		connectedRemoteSites,
+		connectedWpcomSites,
+		remoteProviderAccounts,
+		...data
+	} = ( parsed ?? {} ) as LegacyUserData;
 
 	const canonicalConnectedSites = Array.isArray( connectedRemoteSites )
 		? connectedRemoteSites
 		: Object.entries( connectedWpcomSites ?? {} ).flatMap( ( [ rawUserId, sites ] ) => {
-			const userId = Number.parseInt( rawUserId, 10 );
-			if ( ! Array.isArray( sites ) ) {
-				return [];
-			}
-			return sites.map( ( site ) => normalizeLegacyWpcomSite( site, userId ) );
-		} );
+				const userId = Number.parseInt( rawUserId, 10 );
+				if ( ! Array.isArray( sites ) ) {
+					return [];
+				}
+				return sites.map( ( site ) => normalizeLegacyWpcomSite( site, userId ) );
+		  } );
 
 	return {
 		...EMPTY_USER_DATA,
@@ -73,10 +97,8 @@ function normalizeUserData( parsed: any ): UserData {
 		siteMetadata: siteMetadata ?? {},
 		connectedRemoteSites: canonicalConnectedSites,
 		connectedWpcomSites,
-		remoteProviderAccounts: Array.isArray( remoteProviderAccounts )
-			? remoteProviderAccounts
-			: [],
-		};
+		remoteProviderAccounts: Array.isArray( remoteProviderAccounts ) ? remoteProviderAccounts : [],
+	};
 }
 
 export async function loadUserData(): Promise< UserData > {
@@ -139,7 +161,9 @@ type UserDataSafeKeys =
 	| 'preferredTerminal'
 	| 'preferredEditor'
 	| 'betaFeatures'
-	| 'colorScheme';
+	| 'colorScheme'
+	| 'sitesDirectoryPath'
+	| 'useSiteNameAsFolder';
 
 type PartialUserDataWithSafeKeysToUpdate = Partial< Pick< UserData, UserDataSafeKeys > >;
 

@@ -60,6 +60,15 @@ describe( 'generateSiteName', () => {
 		const name = await generateSiteName( [], SITES_DIR );
 		expect( name ).not.toBe( 'My WordPress Website' );
 	} );
+
+	it( 'supports custom folder-name formatting when checking availability', async () => {
+		vi.mocked( pathExists ).mockImplementation( async ( p ) => {
+			return String( p ).includes( 'My WordPress Website' );
+		} );
+		vi.mocked( isEmptyDir ).mockResolvedValue( false );
+		const name = await generateSiteName( [], SITES_DIR, ( value ) => value );
+		expect( name ).not.toBe( 'My WordPress Website' );
+	} );
 } );
 
 describe( 'generateNumberedName', () => {

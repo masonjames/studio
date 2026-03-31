@@ -86,8 +86,8 @@ interface NavigationContentProps {
 	setBlueprintSuggestedSiteName: ( name: string | undefined ) => void;
 	blueprintRequiresCustomDomain: boolean;
 	setBlueprintRequiresCustomDomain: ( requires: boolean ) => void;
-	selectedRemoteProvider?: SyncSite['provider'];
-	setSelectedRemoteProvider: ( provider?: SyncSite['provider'] ) => void;
+	selectedRemoteProvider?: SyncSite[ 'provider' ];
+	setSelectedRemoteProvider: ( provider?: SyncSite[ 'provider' ] ) => void;
 	selectedRemoteSite?: SyncSite;
 	setSelectedRemoteSite: ( site?: SyncSite ) => void;
 	isDeeplinkFlow: boolean;
@@ -184,14 +184,17 @@ function NavigationContent( props: NavigationContentProps ) {
 
 	const findAvailableSiteName = useFindAvailableSiteName();
 	const [ remoteSiteName, setRemoteSiteName ] = useState( '' );
+	const [ remoteSitePath, setRemoteSitePath ] = useState( '' );
 
 	const handlePullRemoteContinue = useCallback( async () => {
 		if ( selectedRemoteSite ) {
 			const availableName = await findAvailableSiteName( selectedRemoteSite.name );
+			const { path } = await onSiteNameChange( availableName );
 			setRemoteSiteName( availableName );
+			setRemoteSitePath( path );
 			goTo( '/pullRemote/create' );
 		}
-	}, [ findAvailableSiteName, goTo, selectedRemoteSite ] );
+	}, [ findAvailableSiteName, goTo, onSiteNameChange, selectedRemoteSite ] );
 
 	const handlePullRemoteProviderSelectContinue = useCallback( () => {
 		if ( selectedRemoteProvider ) {
@@ -203,10 +206,12 @@ function NavigationContent( props: NavigationContentProps ) {
 	const handlePullRemoteProviderSiteContinue = useCallback( async () => {
 		if ( selectedRemoteSite ) {
 			const availableName = await findAvailableSiteName( selectedRemoteSite.name );
+			const { path } = await onSiteNameChange( availableName );
 			setRemoteSiteName( availableName );
+			setRemoteSitePath( path );
 			goTo( '/pullRemoteProvider/create' );
 		}
-	}, [ findAvailableSiteName, goTo, selectedRemoteSite ] );
+	}, [ findAvailableSiteName, goTo, onSiteNameChange, selectedRemoteSite ] );
 
 	const blueprints = useMemo(
 		() => blueprintsData?.blueprints.slice().reverse() || [],
@@ -232,9 +237,11 @@ function NavigationContent( props: NavigationContentProps ) {
 			goTo( '/backup' );
 		} else if ( location.path === '/pullRemote/create' ) {
 			setRemoteSiteName( '' );
+			setRemoteSitePath( '' );
 			goTo( '/pullRemote' );
 		} else if ( location.path === '/pullRemoteProvider/create' ) {
 			setRemoteSiteName( '' );
+			setRemoteSitePath( '' );
 			goTo( '/pullRemoteProvider/select-site' );
 		} else if ( location.path === '/pullRemoteProvider/select-site' ) {
 			setSelectedRemoteSite( undefined );
@@ -259,11 +266,13 @@ function NavigationContent( props: NavigationContentProps ) {
 			if ( location.path === '/pullRemote' ) {
 				setSelectedRemoteSite( undefined );
 				setRemoteSiteName( '' );
+				setRemoteSitePath( '' );
 			}
 			if ( location.path === '/pullRemoteProvider/select-provider' ) {
 				setSelectedRemoteProvider( undefined );
 				setSelectedRemoteSite( undefined );
 				setRemoteSiteName( '' );
+				setRemoteSitePath( '' );
 			}
 			goToFirstStep();
 		} else {
@@ -277,6 +286,7 @@ function NavigationContent( props: NavigationContentProps ) {
 		setSelectedBlueprint,
 		setBlueprintPreferredVersions,
 		setBlueprintWarnings,
+		setSelectedRemoteProvider,
 		setSelectedRemoteSite,
 		setBlueprintSuggestedSiteName,
 	] );
@@ -426,16 +436,22 @@ function NavigationContent( props: NavigationContentProps ) {
 			<Navigator.Screen className="flex-1" path="/backup/create">
 				<CreateSite { ...createSiteProps } defaultValues={ defaultValues } />
 			</Navigator.Screen>
-			<Navigator.Screen className="flex-1 flex justify-center" path="/pullRemoteProvider/select-provider">
+			<Navigator.Screen
+				className="flex-1 flex justify-center"
+				path="/pullRemoteProvider/select-provider"
+			>
 				<SelectRemoteProvider
 					selectedProvider={ selectedRemoteProvider }
-					onSelectProvider={ provider => {
+					onSelectProvider={ ( provider ) => {
 						setSelectedRemoteProvider( provider );
 						setSelectedRemoteSite( undefined );
 					} }
 				/>
 			</Navigator.Screen>
-			<Navigator.Screen className="flex-1 flex justify-center" path="/pullRemoteProvider/select-site">
+			<Navigator.Screen
+				className="flex-1 flex justify-center"
+				path="/pullRemoteProvider/select-site"
+			>
 				<PullProviderRemoteSite
 					selectedProvider={ selectedRemoteProvider }
 					selectedRemoteSite={ selectedRemoteSite }
@@ -451,13 +467,21 @@ function NavigationContent( props: NavigationContentProps ) {
 			<Navigator.Screen className="flex-1" path="/pullRemote/create">
 				<CreateSite
 					{ ...createSiteProps }
-					defaultValues={ { ...defaultValues, siteName: remoteSiteName } }
+					defaultValues={ {
+						...defaultValues,
+						siteName: remoteSiteName,
+						sitePath: remoteSitePath || defaultValues.sitePath,
+					} }
 				/>
 			</Navigator.Screen>
 			<Navigator.Screen className="flex-1" path="/pullRemoteProvider/create">
 				<CreateSite
 					{ ...createSiteProps }
-					defaultValues={ { ...defaultValues, siteName: remoteSiteName } }
+					defaultValues={ {
+						...defaultValues,
+						siteName: remoteSiteName,
+						sitePath: remoteSitePath || defaultValues.sitePath,
+					} }
 				/>
 			</Navigator.Screen>
 			<Stepper

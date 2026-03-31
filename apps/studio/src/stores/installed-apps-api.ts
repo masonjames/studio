@@ -11,6 +11,7 @@ import {
 	terminalConfig,
 	getTerminalsSupportedOnPlatform,
 } from 'src/modules/user-settings/lib/terminal';
+import { SiteDirectoryPreferences } from 'src/modules/user-settings/user-settings-types';
 
 export const installedAppsApi = createApi( {
 	reducerPath: 'installedAppsApi',
@@ -21,6 +22,7 @@ export const installedAppsApi = createApi( {
 		'UserEditor',
 		'UserTerminal',
 		'ColorScheme',
+		'SiteDirectoryPreferences',
 	],
 	endpoints: ( builder ) => ( {
 		getStudioCliIsInstalled: builder.query< boolean, void >( {
@@ -90,6 +92,23 @@ export const installedAppsApi = createApi( {
 			},
 			invalidatesTags: [ 'ColorScheme' ],
 		} ),
+		getSiteDirectoryPreferences: builder.query< SiteDirectoryPreferences, void >( {
+			queryFn: async () => {
+				const preferences = await getIpcApi().getSiteDirectoryPreferences();
+				return { data: preferences };
+			},
+			providesTags: [ 'SiteDirectoryPreferences' ],
+		} ),
+		saveSiteDirectoryPreferences: builder.mutation<
+			SiteDirectoryPreferences,
+			SiteDirectoryPreferences
+		>( {
+			queryFn: async ( preferences ) => {
+				await getIpcApi().saveSiteDirectoryPreferences( preferences );
+				return { data: preferences };
+			},
+			invalidatesTags: [ 'SiteDirectoryPreferences' ],
+		} ),
 	} ),
 } );
 
@@ -103,6 +122,8 @@ export const {
 	useSaveStudioCliIsInstalledMutation,
 	useGetColorSchemeQuery,
 	useSaveColorSchemeMutation,
+	useGetSiteDirectoryPreferencesQuery,
+	useSaveSiteDirectoryPreferencesMutation,
 } = installedAppsApi;
 
 export const selectInstalledEditors = createSelector(

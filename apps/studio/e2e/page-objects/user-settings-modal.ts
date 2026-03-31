@@ -19,6 +19,14 @@ export default class UserSettingsModal {
 		return this.page.getByTestId( 'language-select' );
 	}
 
+	get siteDirectoryPickerButton() {
+		return this.page.getByTestId( 'site-directory-picker-button' );
+	}
+
+	get useSiteNameAsFolderCheckbox() {
+		return this.page.getByLabel( 'Use site name for new folder names' );
+	}
+
 	get saveButton() {
 		return this.page.getByTestId( 'preferences-save-button' );
 	}

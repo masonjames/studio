@@ -37,7 +37,10 @@ import { getWordPressVersion } from '@studio/common/lib/get-wordpress-version';
 import { isErrnoException } from '@studio/common/lib/is-errno-exception';
 import { getAuthenticationUrl } from '@studio/common/lib/oauth';
 import { decodePassword, encodePassword } from '@studio/common/lib/passwords';
-import { sanitizeFolderName } from '@studio/common/lib/sanitize-folder-name';
+import {
+	sanitizeFolderName,
+	sanitizeSiteNameAsFolderName,
+} from '@studio/common/lib/sanitize-folder-name';
 import { readSharedConfig, updateSharedConfig } from '@studio/common/lib/shared-config';
 import { isWordPressDevVersion } from '@studio/common/lib/wordpress-version-utils';
 import { __, sprintf, LocaleData, defaultI18n } from '@wordpress/i18n';
@@ -95,7 +98,11 @@ import { isStudioCliInstalled } from 'src/modules/cli/lib/ipc-handlers';
 import { STABLE_BIN_DIR_PATH } from 'src/modules/cli/lib/windows-installation-manager';
 import { shouldExcludeFromSync, shouldLimitDepth } from 'src/modules/sync/lib/tree-utils';
 import { supportedEditorConfig, SupportedEditor } from 'src/modules/user-settings/lib/editor';
-import { getUserEditor, getUserTerminal } from 'src/modules/user-settings/lib/ipc-handlers';
+import {
+	getSiteDirectoryPreferences,
+	getUserEditor,
+	getUserTerminal,
+} from 'src/modules/user-settings/lib/ipc-handlers';
 import { winFindEditorPath } from 'src/modules/user-settings/lib/win-editor-path';
 import { SiteServer, stopAllServers as triggerStopAllServers } from 'src/site-server';
 import { DEFAULT_SITE_PATH, getSiteThumbnailPath } from 'src/storage/paths';
@@ -159,11 +166,13 @@ export {
 export {
 	getColorScheme,
 	getInstalledAppsAndTerminals,
+	getSiteDirectoryPreferences,
 	getUserEditor,
 	getUserLocale,
 	getUserTerminal,
 	previewColorScheme,
 	saveColorScheme,
+	saveSiteDirectoryPreferences,
 	saveUserEditor,
 	saveUserLocale,
 	saveUserTerminal,
@@ -678,6 +687,16 @@ export interface FolderDialogResponse {
 	isNameTooLong?: boolean;
 }
 
+async function getNewSiteDirectoryContext() {
+	const preferences = await getSiteDirectoryPreferences();
+	return {
+		...preferences,
+		formatFolderName: preferences.useSiteNameAsFolder
+			? sanitizeSiteNameAsFolderName
+			: sanitizeFolderName,
+	};
+}
+
 export async function showSaveAsDialog( event: IpcMainInvokeEvent, options: SaveDialogOptions ) {
 	const parentWindow = BrowserWindow.fromWebContents( event.sender );
 	if ( ! parentWindow ) {
@@ -721,9 +740,10 @@ export async function showOpenFolderDialog(
 		};
 	}
 
+	const { sitesDirectoryPath } = await getNewSiteDirectoryContext();
 	const { canceled, filePaths } = await dialog.showOpenDialog( parentWindow, {
 		title,
-		defaultPath: defaultDialogPath !== '' ? defaultDialogPath : DEFAULT_SITE_PATH,
+		defaultPath: defaultDialogPath !== '' ? defaultDialogPath : sitesDirectoryPath,
 		properties: [
 			'openDirectory',
 			'createDirectory', // allow user to create new directories; macOS only
@@ -767,7 +787,8 @@ export async function copySite(
 	}
 	const sourceSite = sourceServer.details;
 
-	const finalSitePath = nodePath.join( DEFAULT_SITE_PATH, sanitizeFolderName( siteName ) );
+	const { sitesDirectoryPath, formatFolderName } = await getNewSiteDirectoryContext();
+	const finalSitePath = nodePath.join( sitesDirectoryPath, formatFolderName( siteName ) );
 
 	console.log( `Copying site '${ sourceSite.name }' to '${ siteName }'` );
 
@@ -940,7 +961,8 @@ export async function generateProposedSitePath(
 	_event: IpcMainInvokeEvent,
 	siteName: string
 ): Promise< FolderDialogResponse > {
-	const path = nodePath.join( DEFAULT_SITE_PATH, sanitizeFolderName( siteName ) );
+	const { sitesDirectoryPath, formatFolderName } = await getNewSiteDirectoryContext();
+	const path = nodePath.join( sitesDirectoryPath, formatFolderName( siteName ) );
 
 	try {
 		return {
@@ -975,9 +997,11 @@ export async function generateSiteNameFromList(
 	_event: IpcMainInvokeEvent,
 	usedSites: SiteDetails[]
 ): Promise< string > {
+	const { sitesDirectoryPath, formatFolderName } = await getNewSiteDirectoryContext();
 	return generateSiteName(
 		usedSites.map( ( s ) => s.name ),
-		DEFAULT_SITE_PATH
+		sitesDirectoryPath,
+		formatFolderName
 	);
 }
 
@@ -986,10 +1010,12 @@ export async function generateNumberedNameFromList(
 	baseName: string,
 	usedSites: SiteDetails[]
 ): Promise< string > {
+	const { sitesDirectoryPath, formatFolderName } = await getNewSiteDirectoryContext();
 	return generateNumberedName(
 		baseName,
 		usedSites.map( ( s ) => s.name ),
-		DEFAULT_SITE_PATH
+		sitesDirectoryPath,
+		formatFolderName
 	);
 }
 

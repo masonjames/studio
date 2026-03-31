@@ -341,13 +341,19 @@ export const CreateSiteForm = ( {
 		// We need to calculate what the proposed path WOULD BE for the current site name
 		const proposedPathResult = await onSiteNameChange( siteName );
 		const proposedPath = proposedPathResult.path;
-		const pathResetToDefault =
-			!! proposedPath &&
-			result.path === proposedPath.substring( 0, proposedPath.lastIndexOf( '/' ) );
+		const proposedPathParent = proposedPath.replace( /[\\/][^\\/]*$/, '' );
+		const pathResetToDefault = !! proposedPath && result.path === proposedPathParent;
 
-		setHasCustomPath( ! pathResetToDefault );
-		// Clear path on reset to trigger regeneration when site name changes
-		setSitePath( pathResetToDefault ? '' : result.path );
+		if ( pathResetToDefault ) {
+			setHasCustomPath( false );
+			setSitePath( proposedPathResult.path );
+			setPathError( proposedPathResult.error ?? '' );
+			setDoesPathContainWordPress( ! proposedPathResult.isEmpty && proposedPathResult.isWordPress );
+			return;
+		}
+
+		setHasCustomPath( true );
+		setSitePath( result.path );
 
 		if ( result.error ) {
 			setPathError( result.error );

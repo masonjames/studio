@@ -3,6 +3,8 @@ import { __ } from '@wordpress/i18n';
 import { isEmptyDir, pathExists } from '@studio/common/lib/fs-utils';
 import { sanitizeFolderName } from '@studio/common/lib/sanitize-folder-name';
 
+export type FolderNameFormatter = ( name: string ) => string;
+
 function getDefaultSiteName(): string {
 	return __( 'My WordPress Website' );
 }
@@ -35,12 +37,13 @@ function getSiteNames(): string[] {
 async function isNameAvailable(
 	name: string,
 	usedNames: string[],
-	sitesDir: string
+	sitesDir: string,
+	formatFolderName: FolderNameFormatter = sanitizeFolderName
 ): Promise< boolean > {
 	if ( usedNames.includes( name ) ) {
 		return false;
 	}
-	const sitePath = path.join( sitesDir, sanitizeFolderName( name ) );
+	const sitePath = path.join( sitesDir, formatFolderName( name ) );
 	try {
 		if ( ! ( await pathExists( sitePath ) ) ) {
 			return true;
@@ -58,16 +61,17 @@ async function isNameAvailable(
 export async function generateNumberedName(
 	baseName: string,
 	usedNames: string[],
-	sitesDir: string
+	sitesDir: string,
+	formatFolderName: FolderNameFormatter = sanitizeFolderName
 ): Promise< string > {
-	if ( await isNameAvailable( baseName, usedNames, sitesDir ) ) {
+	if ( await isNameAvailable( baseName, usedNames, sitesDir, formatFolderName ) ) {
 		return baseName;
 	}
 
 	let number = 2;
 	let candidateName = `${ baseName } ${ number }`;
 
-	while ( ! ( await isNameAvailable( candidateName, usedNames, sitesDir ) ) ) {
+	while ( ! ( await isNameAvailable( candidateName, usedNames, sitesDir, formatFolderName ) ) ) {
 		number++;
 		candidateName = `${ baseName } ${ number }`;
 	}
@@ -79,14 +83,18 @@ export async function generateNumberedName(
  * Generates a random site name from a list of default names.
  * Falls back to numbered variants when all names are taken.
  */
-export async function generateSiteName( usedNames: string[], sitesDir: string ): Promise< string > {
-	if ( await isNameAvailable( getDefaultSiteName(), usedNames, sitesDir ) ) {
+export async function generateSiteName(
+	usedNames: string[],
+	sitesDir: string,
+	formatFolderName: FolderNameFormatter = sanitizeFolderName
+): Promise< string > {
+	if ( await isNameAvailable( getDefaultSiteName(), usedNames, sitesDir, formatFolderName ) ) {
 		return getDefaultSiteName();
 	}
 
 	const availableNames = [];
 	for ( const name of getSiteNames() ) {
-		if ( await isNameAvailable( name, usedNames, sitesDir ) ) {
+		if ( await isNameAvailable( name, usedNames, sitesDir, formatFolderName ) ) {
 			availableNames.push( name );
 		}
 	}
@@ -95,5 +103,5 @@ export async function generateSiteName( usedNames: string[], sitesDir: string ):
 		return availableNames[ Math.floor( Math.random() * availableNames.length ) ];
 	}
 
-	return generateNumberedName( getDefaultSiteName(), usedNames, sitesDir );
+	return generateNumberedName( getDefaultSiteName(), usedNames, sitesDir, formatFolderName );
 }

@@ -663,6 +663,12 @@ describe( 'AddSite', () => {
 
 	it( 'navigates through the external provider pull flow and prefills the site name', async () => {
 		const user = userEvent.setup();
+		mockGenerateProposedSitePath.mockImplementation( async ( siteName: string ) => ( {
+			path: `/default_path/${ siteName }`,
+			name: siteName,
+			isEmpty: true,
+			isWordPress: false,
+		} ) );
 		renderWithProvider( <AddSite /> );
 
 		await user.click( screen.getByRole( 'button', { name: 'Add site' } ) );
@@ -686,6 +692,9 @@ describe( 'AddSite', () => {
 
 		await waitFor( () => {
 			expect( screen.getByTestId( 'site-name-input' ) ).toHaveValue( 'Avenue941.com' );
+			expect( screen.getByTestId( 'local-path-input' ) ).toHaveValue(
+				'/default_path/Avenue941.com'
+			);
 		} );
 	} );
 

@@ -15,15 +15,25 @@ const ALLOWED_CHARS = new RegExp(
 	'gi'
 );
 
-export const sanitizeFolderName = ( filename: string ) => {
+function normalizeFolderName( filename: string ) {
 	return String( filename )
 		.replace( /ł/g, 'l' ) // Polish ł to l
 		.replace( /Ł/g, 'L' ) // Polish Ł to L
 		.normalize( 'NFKD' )
 		.replace( /[\u0300-\u036f]/g, '' ) // Remove diacritics
-		.toLowerCase()
 		.replace( ALLOWED_CHARS, '' )
-		.trim()
+		.trim();
+}
+
+export const sanitizeFolderName = ( filename: string ) => {
+	return normalizeFolderName( filename )
+		.toLowerCase()
 		.replace( /\s+/g, '-' ) // Replace spaces with hyphens
 		.replace( /-+/g, '-' ); // Replace multiple hyphens with a single one
+};
+
+export const sanitizeSiteNameAsFolderName = ( filename: string ) => {
+	return normalizeFolderName( filename )
+		.replace( /\s+/g, ' ' ) // Collapse multiple spaces while preserving the site name format
+		.replace( /-+/g, '-' );
 };

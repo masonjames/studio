@@ -26,8 +26,10 @@ const mockIpcApi = {
 	getInstalledAppsAndTerminals: vi.fn(),
 	getUserEditor: vi.fn().mockImplementation( async () => getUserEditor() ),
 	getUserTerminal: vi.fn(),
+	getSiteDirectoryPreferences: vi.fn(),
 	saveUserEditor: vi.fn(),
 	saveUserTerminal: vi.fn(),
+	saveSiteDirectoryPreferences: vi.fn(),
 };
 
 vi.mocked( getIpcApi ).mockReturnValue( mockIpcApi as unknown as IpcApi );
@@ -201,6 +203,41 @@ describe( 'Installed Apps API', () => {
 			expect( mockIpcApi.saveUserTerminal ).toHaveBeenCalledTimes( 1 );
 			expect( mockIpcApi.saveUserTerminal ).toHaveBeenCalledWith( 'warp' );
 			expect( result.data ).toBe( 'warp' );
+		} );
+	} );
+
+	describe( 'site directory preferences', () => {
+		it( 'should fetch site directory preferences', async () => {
+			const preferences = {
+				sitesDirectoryPath: '/Users/test/Studio',
+				useSiteNameAsFolder: true,
+			};
+			mockIpcApi.getSiteDirectoryPreferences.mockResolvedValueOnce( preferences );
+
+			const store = createTestStore();
+			const result = await store.dispatch(
+				installedAppsApi.endpoints.getSiteDirectoryPreferences.initiate( undefined )
+			);
+
+			expect( mockIpcApi.getSiteDirectoryPreferences ).toHaveBeenCalledTimes( 1 );
+			expect( result.data ).toEqual( preferences );
+		} );
+
+		it( 'should save site directory preferences', async () => {
+			const preferences = {
+				sitesDirectoryPath: '/Sites/WordPress',
+				useSiteNameAsFolder: true,
+			};
+			mockIpcApi.saveSiteDirectoryPreferences.mockResolvedValueOnce( undefined );
+
+			const store = createTestStore();
+			const result = await store.dispatch(
+				installedAppsApi.endpoints.saveSiteDirectoryPreferences.initiate( preferences )
+			);
+
+			expect( mockIpcApi.saveSiteDirectoryPreferences ).toHaveBeenCalledTimes( 1 );
+			expect( mockIpcApi.saveSiteDirectoryPreferences ).toHaveBeenCalledWith( preferences );
+			expect( result.data ).toEqual( preferences );
 		} );
 	} );
 
