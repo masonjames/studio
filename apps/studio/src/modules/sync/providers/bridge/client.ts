@@ -150,20 +150,45 @@ function assertBackupsMatchSite( backups: BridgeBackupManifest[], expectedSiteId
 	} );
 }
 
-function getProviderLabel( account: RemoteProviderAccount ) {
-	return getExternalRemoteProvider( account.provider )?.providerLabel ?? account.provider;
+function getProviderLabel( provider: RemoteProviderAccount[ 'provider' ] ) {
+	return getExternalRemoteProvider( provider )?.providerLabel ?? provider;
 }
 
-function assertBridgeSiteProvider( account: RemoteProviderAccount ) {
-	if ( account.provider !== 'mainwpBridge' ) {
-		throw new Error(
-			'Bridge site responses must include an explicit provider before non-MainWP providers can reuse this site mapping.'
-		);
+function assertBridgeSupportsProvider(
+	provider: TestRemoteProviderAccountInput[ 'provider' ],
+	health: BridgeHealthResponse
+) {
+	if ( ! health.providerSupport || health.providerSupport[ provider ] !== false ) {
+		return;
 	}
+
+	throw new Error(
+		`This bridge does not advertise support for ${ getProviderLabel( provider ) }.`
+	);
+}
+
+function resolveBridgeSiteProvider( account: RemoteProviderAccount, site: PublicBridgeSite ) {
+	if ( site.provider ) {
+		return site.provider;
+	}
+
+	if ( account.provider === 'mainwpBridge' ) {
+		return account.provider;
+	}
+
+	throw new Error(
+		'Bridge site responses must include an explicit provider before non-MainWP providers can reuse this site mapping.'
+	);
 }
 
 function toSyncSite( account: RemoteProviderAccount, site: PublicBridgeSite ): SyncSite {
-	assertBridgeSiteProvider( account );
+	const siteProvider = resolveBridgeSiteProvider( account, site );
+	if ( siteProvider !== account.provider ) {
+		throw new Error(
+			`The bridge returned site "${ site.id }" for provider "${ siteProvider }" while "${ account.provider }" was expected.`
+		);
+	}
+
 	const canPull = Boolean(
 		site.capabilities.pull &&
 			site.capabilities.backupCreate !== false &&
@@ -171,10 +196,10 @@ function toSyncSite( account: RemoteProviderAccount, site: PublicBridgeSite ): S
 	);
 
 	return {
-		id: buildRemoteSiteKey( account.provider, site.id ),
+		id: buildRemoteSiteKey( siteProvider, site.id ),
 		remoteSiteId: site.id,
-		provider: account.provider,
-		providerLabel: getProviderLabel( account ),
+		provider: siteProvider,
+		providerLabel: getProviderLabel( siteProvider ),
 		providerAccountId: account.id,
 		localSiteId: '',
 		name: site.name,
@@ -205,6 +230,7 @@ export async function testBridgeAccountConnection(
 		{ path: '/healthz', method: 'GET', token: 'read' },
 		bridgeHealthResponseSchema
 	);
+	assertBridgeSupportsProvider( input.provider, health );
 	await requestJson(
 		normalized,
 		{ path: '/v1/sites', method: 'GET', token: 'read' },
@@ -221,6 +247,7 @@ export async function listBridgeSites(
 		{ path: '/healthz', method: 'GET', token: 'read' },
 		bridgeHealthResponseSchema
 	);
+	assertBridgeSupportsProvider( account.provider, health );
 	const response = await requestJson(
 		account,
 		{ path: '/v1/sites', method: 'GET', token: 'read' },

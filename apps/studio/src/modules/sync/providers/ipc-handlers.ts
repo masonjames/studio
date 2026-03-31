@@ -1,6 +1,7 @@
 import { type IpcMainInvokeEvent } from 'electron';
 import { randomUUID } from 'node:crypto';
 import {
+	type BridgeBackedRemoteProvider,
 	type RemoteProvider,
 	type RemoteProviderAccount,
 	type RemoteProviderSiteListResult,
@@ -45,6 +46,28 @@ function normalizeRouteSupport( routeSupport?: {
 	};
 }
 
+function extractSupportedProviders( providerSupport?: {
+	mainwpBridge?: boolean;
+	wpRemote?: boolean;
+	flywheel?: boolean;
+	wpEngine?: boolean;
+} ): BridgeBackedRemoteProvider[] | undefined {
+	if ( ! providerSupport ) {
+		return undefined;
+	}
+
+	const supportedProviders = (
+		[
+			'mainwpBridge',
+			'wpRemote',
+			'flywheel',
+			'wpEngine',
+		] as const satisfies readonly BridgeBackedRemoteProvider[]
+	 ).filter( ( provider ) => providerSupport[ provider ] === true );
+
+	return supportedProviders.length > 0 ? supportedProviders : undefined;
+}
+
 export async function listRemoteProviderAccounts(
 	_event: IpcMainInvokeEvent,
 	provider?: RemoteProvider
@@ -81,7 +104,8 @@ export async function upsertRemoteProviderAccount(
 	input: UpsertRemoteProviderAccountInput
 ): Promise< RemoteProviderAccount > {
 	const client = getRemoteProviderClient( input.provider );
-	const { normalized } = await client.testAccount( input );
+	const { normalized, health } = await client.testAccount( input );
+	const supportedProviders = extractSupportedProviders( health.providerSupport );
 	const now = new Date().toISOString();
 
 	try {
@@ -98,7 +122,9 @@ export async function upsertRemoteProviderAccount(
 			mutateToken: normalized.mutateToken,
 			tokenMode: normalized.tokenMode,
 			...( normalized.tokenMode === 'single' ? { lastValidatedAt: now } : {} ),
-			...( existingAccount?.supportedProviders
+			...( supportedProviders
+				? { supportedProviders }
+				: existingAccount?.supportedProviders
 				? { supportedProviders: existingAccount.supportedProviders }
 				: {} ),
 			createdAt: existingAccount?.createdAt ?? now,

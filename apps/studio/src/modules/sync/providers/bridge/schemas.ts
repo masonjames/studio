@@ -1,5 +1,21 @@
 import { z } from 'zod';
 
+const bridgeBackedRemoteProviderSchema = z.enum( [
+	'mainwpBridge',
+	'wpRemote',
+	'flywheel',
+	'wpEngine',
+] );
+
+export const bridgeProviderSupportSchema = z
+	.object( {
+		mainwpBridge: z.boolean().default( false ),
+		wpRemote: z.boolean().default( false ),
+		flywheel: z.boolean().default( false ),
+		wpEngine: z.boolean().default( false ),
+	} )
+	.partial();
+
 export const bridgeRouteSupportSchema = z
 	.object( {
 		backupInventory: z.boolean().default( false ),
@@ -12,6 +28,7 @@ export const bridgeRouteSupportSchema = z
 export const bridgeHealthResponseSchema = z
 	.object( {
 		ok: z.boolean(),
+		providerSupport: bridgeProviderSupportSchema.optional(),
 		routeSupport: bridgeRouteSupportSchema.optional(),
 	} )
 	.passthrough();
@@ -30,6 +47,7 @@ export const bridgeSiteCapabilitiesSchema = z
 export const publicBridgeSiteSchema = z
 	.object( {
 		id: z.string().min( 1 ),
+		provider: bridgeBackedRemoteProviderSchema.optional(),
 		name: z.string().min( 1 ),
 		activeUrl: z.string().url(),
 		urls: z.array( z.string().url() ).default( [] ),
