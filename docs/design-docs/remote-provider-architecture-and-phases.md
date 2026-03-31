@@ -1,0 +1,451 @@
+# Remote Provider Architecture and Phased Implementation Plan
+
+## About this doc
+
+This document translates the remote-provider product direction into an implementation strategy across the Studio app, the shared bridge, and supporting infrastructure.
+
+- **Status:** Draft
+- **Last updated:** 2026-03-31
+- **Primary repo:** `studio`
+- **Companion docs:** `remote-provider-expansion-prd.md`, `remote-provider-backlog.md`
+
+## Scope of this plan
+
+This plan covers:
+
+- the Studio provider picker and add-site flow,
+- the external-provider account and site-selection path,
+- the shared bridge strategy for MainWP and WP Remote,
+- discovery work for Flywheel and WP Engine,
+- hardening and rollout support for the provider-expansion stream.
+
+This plan does **not** redesign WP.com auth or the existing WP.com sync flow.
+
+## Current architecture
+
+### Current Studio call chain
+
+The current provider pull path is:
+
+1. `apps/studio/src/modules/add-site/components/options.tsx`
+2. `apps/studio/src/modules/add-site/index.tsx`
+3. `apps/studio/src/modules/add-site/components/select-remote-provider.tsx`
+4. `apps/studio/src/modules/add-site/components/pull-provider-remote-site.tsx`
+5. `apps/studio/src/modules/sync/providers/mainwp-bridge/site-selector.tsx`
+6. `apps/studio/src/hooks/use-add-site.ts` (`handleCreateSite()` plus `connectSite` handoff)
+7. `apps/studio/src/stores/sync/connected-sites.ts`
+8. `apps/studio/src/stores/sync/sync-operations-slice.ts`
+9. `apps/studio/src/preload.ts`
+10. `apps/studio/src/modules/sync/providers/ipc-handlers.ts`
+11. `apps/studio/src/modules/sync/providers/mainwp-bridge/client.ts`
+12. bridge HTTP endpoints implemented in `studio-hetzner-bridge/src/app.ts`
+13. existing site import pipeline
+
+### Current implementation reality
+
+- `registry.ts` still contains placeholder providers that do not match the desired roadmap.
+- `pull-provider-remote-site.tsx` is effectively wired around `mainwpBridge`.
+- `modules/sync/types.ts` and `sync-operations-slice.ts` are narrowed around one bridge-backed provider.
+- The current bridge repo is named Hetzner-specific, but the HTTP contract is already mostly provider-neutral.
+- WP Remote likely needs bridge-side handling because its plugin code suggests signed callbacks and connection keys.
+
+## Key architectural decisions
+
+### 1. Keep one provider-bridge surface
+
+We will extend the existing bridge contract instead of building a separate WP Remote-specific bridge.
+
+Why:
+
+- The current bridge already owns auth, capabilities, jobs, artifacts, and execution seams.
+- MainWP already depends on this pattern.
+- A second bridge would duplicate job, secret, polling, and operational logic.
+
+### 2. Preserve `mainwpBridge` persisted identity for compatibility
+
+Even if we rename folders or shared modules internally, we should keep the stored provider identity as `mainwpBridge` until a dedicated migration is justified.
+
+Why:
+
+- Existing appdata and connected-site state should keep working.
+- This reduces rollback and release risk.
+
+### 3. Treat WP Remote as a bridge-backed provider
+
+Studio should not own private-key custody or signed callback composition for WP Remote in the Electron client.
+
+Why:
+
+- The local `wpremote` codebase suggests a signed request model.
+- Bridge-side execution is safer and easier to standardize.
+
+### 4. Treat Flywheel and WP Engine as discovery-first providers
+
+The product goal is full support, but the immediate engineering posture should be discovery-gated because current local artifacts do not yet prove a viable contract.
+
+## Target Studio architecture
+
+### Provider lineup
+
+The chooser should support this order:
+
+1. `wpRemote`
+2. `mainwpBridge`
+3. `flywheel`
+4. `wpEngine`
+
+### Provider availability model
+
+The provider registry should move from a simple available flag to an availability model such as:
+
+- `available`
+- `discovery`
+- `disabled`
+
+This lets the same chooser render:
+
+- real providers,
+- discovery entries,
+- temporarily disabled providers.
+
+### Provider definition shape
+
+The provider registry should become the single source of truth for:
+
+- label and description,
+- provider order,
+- availability state,
+- pull transport,
+- which selector UI to render.
+
+An illustrative direction:
+
+```ts
+type ProviderAvailability = 'available' | 'discovery' | 'disabled';
+
+type RemoteProviderDefinition = {
+  id: RemoteProvider;
+  label: string;
+  description: string;
+  availability: ProviderAvailability;
+  pullTransport: 'bridge' | 'wpcom';
+  selectorKind: 'mainwp' | 'wpremote' | 'discovery';
+};
+```
+
+### Account model
+
+The remote provider account model should be widened without breaking old stored accounts.
+
+Principles:
+
+- keep `mainwpBridge` readable,
+- add provider metadata additively,
+- keep account validation inside provider IPC,
+- reuse shared bridge-backed account fields only where discovery proves the provider can support them.
+
+Likely account concerns for providers that fit the current bridge pattern:
+
+- bridge URL,
+- token mode,
+- read token,
+- mutate token,
+- supported providers,
+- validation timestamp.
+
+WP Remote is explicitly not locked to that shape yet; Phase 4 discovery may require a different provider-specific account input model.
+
+### Site selection model
+
+`pull-provider-remote-site.tsx` should stop hard-coding MainWP and instead resolve a provider-specific selector from a small registry.
+
+Expected behavior:
+
+- MainWP uses shared bridge plumbing plus MainWP-specific copy.
+- WP Remote uses shared bridge plumbing plus WP Remote-specific copy and validation.
+- Flywheel and WP Engine use a discovery state until a real adapter exists.
+
+### Pull operation model
+
+The current remote pull operation should be generalized from “MainWP pull” to “bridge-backed pull.”
+
+The important runtime concerns stay the same:
+
+- start remote export/backup,
+- poll for readiness,
+- download artifact,
+- hand off to the existing import pipeline,
+- update progress and error state in Redux.
+
+## Target bridge architecture
+
+### What stays the same
+
+The bridge should continue to own:
+
+- auth and token scope checks,
+- site inventory exposure,
+- async job creation and polling,
+- artifact generation and download,
+- route-support and capability reporting.
+
+### What changes
+
+The bridge should evolve from “Hetzner-oriented inventory + execution” to “provider-aware adapters behind one contract.”
+
+That means:
+
+- site inventory records need provider identity,
+- `/healthz` or equivalent capability responses need provider support metadata,
+- execution should route by provider or adapter type,
+- provider-specific secrets stay on the bridge.
+
+### Provider adapters
+
+The bridge should ultimately support an adapter pattern such as:
+
+- `mainwpBridge` -> current bridge-backed flow
+- `wpRemote` -> signed callback / connection-key flow
+- `flywheel` -> discovery result pending
+- `wpEngine` -> discovery result pending
+
+We should avoid encoding provider-specific orchestration logic directly into Studio wherever the bridge can own it.
+
+## Cross-repo impact
+
+### `studio`
+
+Primary implementation areas:
+
+- `apps/studio/src/modules/add-site/*`
+- `apps/studio/src/modules/sync/providers/*`
+- `apps/studio/src/modules/sync/types.ts`
+- `apps/studio/src/stores/sync/*`
+- `apps/studio/src/preload.ts`
+- `apps/studio/src/ipc-types.d.ts`
+- `apps/studio/src/ipc-handlers.ts`
+
+### `studio-hetzner-bridge`
+
+Primary implementation areas:
+
+- `src/app.ts`
+- `src/site-inventory.ts`
+- `src/execution.ts`
+- `src/config.ts`
+- `README.md`
+
+### `platform-infra`
+
+Primary documentation and rollout areas:
+
+- `docs/services/studio-hetzner-bridge.md`
+- `docs/plans/*`
+- any deployment/runbook material tied to bridge rollout, access, and secrets
+
+### Research inputs
+
+- `wpremote/*` for plugin pairing and callback contract discovery
+- `Contents/*` for Flywheel/WP Engine ecosystem comparison and Local-app behavior
+- existing MainWP environments as regression fixtures
+
+## What should stay unchanged initially
+
+These paths should remain out of scope for the first implementation tranche:
+
+- `apps/studio/src/components/auth-provider.tsx`
+- `apps/studio/src/hooks/use-auth.ts`
+- `apps/studio/src/hooks/sync-sites/use-listen-deep-link-connection.ts`
+- `apps/studio/src/modules/user-settings/components/account-tab.tsx`
+
+Reason: they are WP.com-specific and do not need to change to deliver external-provider expansion.
+
+## Phased delivery plan
+
+## Phase 1 - Studio provider model generalization
+
+### Objective
+
+Make the chooser and type model capable of representing the planned provider lineup without yet committing to every provider implementation.
+
+### Expected changes
+
+- widen provider types in `modules/sync/types.ts`
+- update `registry.ts`
+- update chooser and provider-selection rendering
+- replace Hetzner/DigitalOcean UI entries with WP Remote/Flywheel/WP Engine
+
+### Exit criteria
+
+- the chooser reflects the new lineup and order,
+- MainWP still renders correctly,
+- discovery providers do not lead users into broken screens.
+
+## Phase 2 - Shared Studio bridge abstraction
+
+### Objective
+
+Move MainWP onto bridge-generic client, schema, and account-form plumbing so other compatible providers can reuse it and WP Remote can opt in only if discovery supports that shape.
+
+### Expected changes
+
+- extract shared bridge client and schema code from `mainwp-bridge/*`
+- extract shared bridge-backed account form for providers that fit the current bridge credential model
+- add a provider-client registry in provider IPC
+- keep preload and IPC typings aligned
+
+### Exit criteria
+
+- MainWP still validates accounts, lists sites, and pulls successfully,
+- provider-specific branching in Studio is limited to selector UI and copy.
+
+## Phase 3 - Bridge contract generalization
+
+### Objective
+
+Make the bridge contract provider-aware without breaking MainWP.
+
+### Expected changes
+
+- add provider identity to public site payloads,
+- add provider support metadata to bridge health or capability checks,
+- generalize inventory and execution seams.
+
+### Exit criteria
+
+- Studio can validate whether a bridge supports a requested provider,
+- current MainWP bridge behavior remains functional.
+
+## Phase 4 - WP Remote discovery and contract definition
+
+### Objective
+
+Define the exact adapter contract needed for WP Remote.
+
+### Discovery questions
+
+- How are sites paired and identified?
+- Which plugin operations are required for inventory and export?
+- Which secrets and signing responsibilities belong on the bridge?
+- Can WP Remote map onto the same job and artifact lifecycle already used by MainWP?
+
+### Exit criteria
+
+- a signed-off go/no-go decision exists,
+- a bridge-mediated contract is documented,
+- Studio-side UI requirements are final enough to implement.
+
+## Phase 5 - WP Remote implementation
+
+### Objective
+
+Ship WP Remote as the primary actionable provider alongside MainWP if the discovery phase confirms a viable bridge-mediated contract.
+
+### Expected changes
+
+- add WP Remote selector UI on top of shared bridge plumbing where applicable,
+- implement bridge-side WP Remote adapter,
+- normalize provider-specific errors,
+- validate against real test fixtures.
+
+### Exit criteria
+
+- WP Remote account validation, site listing, pull, and import all work end-to-end,
+- MainWP regression tests still pass.
+
+## Phase 6 - Flywheel and WP Engine discovery
+
+### Objective
+
+Confirm whether Flywheel and WP Engine can support a reliable Studio workflow.
+
+### Research inputs
+
+- their user-facing products,
+- Local app behavior under Connected accounts,
+- any available auth/site-list/export mechanisms,
+- hands-on testing against available environments.
+
+### Exit criteria
+
+Each provider must end in one of two states:
+
+- approved for implementation with a concrete contract, or
+- explicitly deferred with rationale.
+
+## Phase 7 - Hardening and rollout support
+
+### Objective
+
+Ensure the provider-expansion work is validated locally, instrumented well enough to debug, and documented clearly for rollout.
+
+### Expected changes
+
+- validate app startup and chooser behavior with `npm start`,
+- run relevant lint, typecheck, and tests,
+- add error, telemetry, and runbook follow-through required for rollout.
+
+### Exit criteria
+
+- the app boots locally,
+- the new provider page is visible,
+- provider rollout and operational documentation are documented and unblocked.
+
+## Validation strategy
+
+### Studio validation
+
+For implementation phases, use the validation flow already documented in `docs/code-contributions.md` plus the repo-specific commands captured in our working instructions:
+
+1. `npx eslint --fix <modified files>`
+2. `npm run typecheck`
+3. `npm test -- <relevant test path>`
+4. `npm start` for local manual verification
+
+### Bridge validation
+
+- unit or contract tests for provider support and site payload changes,
+- health/capability checks against real bridge deployments,
+- additive rollout so MainWP remains available during transition.
+
+### End-to-end validation fixtures
+
+Use real environments where available, without storing secrets in docs:
+
+- existing MainWP instance currently used with Studio,
+- WP Remote fixture(s) available in RepoPrompt and approved installs,
+- approved Flywheel fixture once identified and confirmed,
+- any approved WP Engine test site once available.
+
+## Risks and mitigations
+
+### Risk: WP Remote cannot map cleanly onto the current bridge contract
+
+**Mitigation:** make Phase 4 a hard discovery gate before full implementation.
+
+### Risk: Flywheel or WP Engine support remains speculative
+
+**Mitigation:** represent them honestly as discovery-driven until contracts are proven.
+
+### Risk: provider generalization regresses MainWP
+
+**Mitigation:** preserve persisted identities, keep route changes additive, and use MainWP as the regression baseline in every phase.
+
+### Risk: bridge naming causes confusion
+
+**Mitigation:** keep the deployment stable now, but document the bridge as the provider-bridge surface in all new planning material.
+
+## Final recommended deliverables for this planning pass
+
+This planning pass should land these files in `studio/docs/design-docs/`:
+
+- `remote-provider-expansion-prd.md`
+- `remote-provider-architecture-and-phases.md`
+- `remote-provider-backlog.md`
+
+Optional follow-on companion docs once implementation begins:
+
+- `studio-hetzner-bridge/docs/provider-bridge-generalization-plan.md`
+- `platform-infra/docs/plans/studio-provider-bridge-rollout.md`
+
+Packaging and distribution follow-on work, including any Cloudflare R2-backed release-artifact stream, should stay separate from the core provider-expansion implementation plan until provider functionality is stable.
