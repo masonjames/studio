@@ -4,7 +4,7 @@
 
 This document translates the remote-provider product direction into an implementation strategy across the Studio app, the shared bridge, and supporting infrastructure.
 
-- **Status:** Draft
+- **Status:** In progress
 - **Last updated:** 2026-03-31
 - **Primary repo:** `studio`
 - **Companion docs:** `remote-provider-expansion-prd.md`, `remote-provider-backlog.md`
@@ -20,6 +20,20 @@ This plan covers:
 - hardening and rollout support for the provider-expansion stream.
 
 This plan does **not** redesign WP.com auth or the existing WP.com sync flow.
+
+## Progress update - 2026-03-31
+
+The provider-expansion work is no longer purely architectural.
+
+Completed and validated:
+
+- chooser/provider-model generalization in Studio,
+- shared bridge-backed provider plumbing in Studio,
+- provider-aware bridge contract generalization,
+- WP Remote bridge bootstrap and discovery against a real Flywheel-hosted Avenue941 test site,
+- Studio-side WP Remote account save and discovered-site listing in discovery-only mode.
+
+The next implementation phase should therefore focus on **bridge-owned WP Remote backup/export support** while leaving Studio pull activation disabled until artifact generation is proven.
 
 ## Current architecture
 
@@ -397,25 +411,113 @@ Phase 4 must not ship:
 - internal bridge seams are ready for a future WP Remote adapter,
 - a conditional go/no-go decision exists for Phase 5.
 
-## Phase 5 - WP Remote implementation
+## Phase 5 - WP Remote bootstrap and discovery implementation
 
 ### Objective
 
-Ship WP Remote as the primary actionable provider alongside MainWP if the discovery phase confirms a viable bridge-mediated contract.
+Ship the first real WP Remote runtime slice:
 
-### Expected changes
+- bridge-owned bootstrap,
+- bridge-owned validation,
+- provider-aware site registration,
+- Studio account save and site discovery,
+- explicit discovery-only gating so pull cannot start yet.
 
-- add WP Remote selector UI on top of shared bridge plumbing where applicable,
-- implement bridge-side WP Remote adapter,
-- normalize provider-specific errors,
-- validate against real test fixtures.
+### Delivered changes
+
+- shared WP Remote selector UI on top of shared bridge-backed account plumbing,
+- bridge-side connection-key bootstrap and runtime credential persistence,
+- bridge-side callback signing and validation transport,
+- bridge-side validated site registration and `/v1/sites` exposure,
+- Studio runtime guards that keep WP Remote non-pullable in this phase,
+- manual verification against a real Flywheel-hosted Avenue941 WP Remote site.
 
 ### Exit criteria
 
-- WP Remote account validation, site listing, pull, and import all work end-to-end,
-- MainWP regression tests still pass.
+- Studio can save a WP Remote bridge account,
+- the bridge can bootstrap and validate at least one real WP Remote site,
+- `/healthz.providerSupport.wpRemote` turns on when validated sites exist,
+- Studio lists the discovered site but keeps it discovery-only,
+- MainWP regression coverage remains intact.
 
-## Phase 6 - Flywheel and WP Engine discovery
+## Phase 6 - WP Remote export support
+
+### Objective
+
+Add real bridge-side WP Remote backup/export support without yet enabling Studio pull.
+
+### Scope
+
+This phase should remain **bridge-first**:
+
+- implement a real WP Remote `runBackup()` path,
+- implement a real WP Remote `runExport()` path,
+- expose backup inventory for validated WP Remote sites,
+- keep Studio-side `pull` disabled until artifact correctness is proven.
+
+### Design summary
+
+Detailed bridge implementation notes for this phase live in `studio-hetzner-bridge/docs/wpremote-export-support-plan.md`.
+
+The bridge should preserve its existing semantics:
+
+- `POST /v1/sites/:siteId/backup` creates a durable bridge-owned backup record,
+- `POST /v1/sites/:siteId/backups/:backupId/export` turns that record into the standard downloadable Studio artifact.
+
+For WP Remote, that means:
+
+- `runBackup()` creates a **bridge-owned staged snapshot** under the backup directory,
+- `runExport()` packages that staged snapshot into the normal tar.gz artifact,
+- site capabilities become:
+  - `backupCreate: true`
+  - `backupsRead: true`
+  - `pull: false`
+
+### Expected bridge changes
+
+- add a rollout flag such as `WPREMOTE_EXPORT_ENABLED`,
+- extend `src/providers/wpremote/transport.ts` with stream support,
+- add a stream parser module for WP Remote framed responses,
+- add a backup-session module that stages SQL and `wp-content` locally,
+- add an SQL dump serializer built from WP Remote DB wing responses,
+- replace the discovery-only unsupported WP Remote executor with real backup/export behavior,
+- adjust the export route guard in `src/app.ts` so it no longer requires `site.capabilities.pull`,
+- keep import/restore unsupported.
+
+### Validation milestones
+
+1. real Avenue941 backup job writes a staged snapshot and manifest,
+2. backup inventory is visible from the bridge,
+3. export job creates a downloadable artifact,
+4. artifact extracts into the expected `sql/`, `wp-content/`, and `meta.json` layout,
+5. Studio can manually import that artifact through the existing import path.
+
+### Out of scope
+
+- enabling Studio WP Remote pull,
+- WP Remote import support,
+- WP Remote restore support,
+- Flywheel/WP Engine account integration.
+
+## Phase 7 - WP Remote Studio pull activation
+
+### Objective
+
+Enable WP Remote pull in Studio only after the bridge export artifact has been validated against the existing import pipeline.
+
+### Expected changes
+
+- relax the current WP Remote runtime guards in Studio,
+- update WP Remote site capability mapping so validated export-capable sites become pullable,
+- validate end-to-end add-site pull/import behavior.
+
+### Exit criteria
+
+- a user can select a WP Remote site in Studio and complete a local pull/import flow,
+- the generated artifact is proven compatible with Studio import,
+- provider-specific failures remain normalized and actionable.
+
+## Phase 8 - Flywheel and WP Engine discovery
 
 ### Objective
 
@@ -435,7 +537,7 @@ Each provider must end in one of two states:
 - approved for implementation with a concrete contract, or
 - explicitly deferred with rationale.
 
-## Phase 7 - Hardening and rollout support
+## Phase 9 - Hardening and rollout support
 
 ### Objective
 

@@ -4,7 +4,7 @@
 
 This product requirements document defines the next phase of remote-hosting integrations for our WordPress Studio fork.
 
-- **Status:** Draft
+- **Status:** In progress
 - **Last updated:** 2026-03-31
 - **Primary repo:** `studio`
 - **Related repos:** `studio-hetzner-bridge`, `platform-infra`, `wpremote`, `mainwp`, `mainwp-hetzner-backup`
@@ -21,6 +21,30 @@ The working product decisions are:
 - Replace them with **Flywheel** and **WP Engine**.
 - Standardize on **one bridge surface** for remote-provider orchestration by extending the existing `studio-hetzner-bridge` contract instead of creating a second remote bridge.
 - Keep the existing repo and deployment name for now to reduce operational churn; defer naming cleanup until after a second provider is live.
+
+## Progress update - 2026-03-31
+
+The provider-expansion stream has now cleared its first real WP Remote validation milestone.
+
+What is proven:
+
+- Studio shows the intended provider lineup: **WP Remote**, **MainWP**, **Flywheel**, **WP Engine**.
+- Studio can save a bridge-backed WP Remote account and list a real discovered site.
+- A local bridge can bootstrap and validate a WP Remote registration against a real Flywheel-hosted Avenue941 test site using:
+  - a fresh connection key,
+  - a bridge-owned callback signing key,
+  - bridge-owned runtime callback credentials.
+- The current Studio UX correctly keeps WP Remote in **discovery-only mode** so users can see the site but cannot start a pull yet.
+
+What is not yet proven:
+
+- bridge-side WP Remote backup creation,
+- bridge-side WP Remote export artifact assembly,
+- Studio pull/import activation for WP Remote.
+
+The next implementation phase is therefore **bridge-first WP Remote export support**, not additional discovery work.
+
+The detailed execution plan for that phase lives in `studio-hetzner-bridge/docs/wpremote-export-support-plan.md`.
 
 ## Context
 
@@ -99,15 +123,15 @@ This phase does **not** include:
 
 ### 1. Pull a site from WP Remote
 
-> Target-state Phase 5 journey. Current builds still discovery-gate WP Remote until live callback validation is complete.
+> Final target-state journey. As of 2026-03-31, the validated product state reaches bridge account save + discovered site listing, then intentionally stops at a discovery-only guard.
 
 1. User opens **Add site** and chooses **Pull from hosting provider**.
 2. Studio shows WP Remote first in the provider picker.
 3. User chooses WP Remote and connects to a shared provider bridge account.
 4. Studio validates the bridge account against the shared bridge contract.
 5. User sees WP Remote sites that have already been paired and registered on that bridge.
-6. User selects a site, creates the local site, and Studio performs the remote export + import pipeline.
-7. The local site is created and ready to run in Studio.
+6. In the current validated state, Studio keeps those sites discovery-only and prevents pull from starting.
+7. In the next implementation phase, the bridge will add real backup/export support so Studio can later resume the normal export + import pipeline.
 
 ### 2. Continue pulling from MainWP
 

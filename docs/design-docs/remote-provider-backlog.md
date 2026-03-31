@@ -18,6 +18,15 @@ This backlog tracks the work required to ship the remote-provider expansion road
 - Keep implementation notes under the relevant task instead of adding separate scratch docs when possible.
 - Do not store secrets, tokens, or credential values in this file.
 
+## Progress snapshot - 2026-03-31
+
+- Studio provider-model generalization is complete.
+- Shared bridge-backed provider plumbing is complete.
+- Provider-aware bridge contract generalization is complete.
+- WP Remote bootstrap/discovery is now manually validated on a real Flywheel-hosted Avenue941 test site.
+- WP Remote remains intentionally discovery-only in Studio.
+- The next implementation phase is bridge-side WP Remote export support.
+
 ## Phase 1 - Studio provider model and chooser updates
 
 ### Goal
@@ -152,10 +161,11 @@ Prove the exact contract required for WP Remote before implementation begins.
   - Document what the bridge must own.
   - Discovery conclusion: the connection key is a pairing seed only; the bridge must own runtime callback credentials, signing material, and replay-safe request dispatch.
 
-- [ ] **P4-2 | research | Validate WP Remote assumptions against available fixtures**
+- [-] **P4-2 | research | Validate WP Remote assumptions against available fixtures**
   - Use the available WP Remote codebases and approved test environments.
   - Capture implementation constraints without storing secrets.
-  - Remaining gate: prove pairing bootstrap, signed callback reads, DB access, filesystem access, and artifact-assembly feasibility against at least one real WP Remote-managed site.
+  - Completed so far: pairing bootstrap, signed callback validation, bridge site registration, and Studio discovery were proven against a real Flywheel-hosted Avenue941 fixture on 2026-03-31.
+  - Remaining gate: prove DB access, filesystem export, and artifact-assembly feasibility.
 
 - [x] **P4-3 | studio-hetzner-bridge | Draft WP Remote bridge adapter contract**
   - Map WP Remote onto the existing site/job/artifact lifecycle if possible.
@@ -166,50 +176,104 @@ Prove the exact contract required for WP Remote before implementation begins.
   - Define empty states.
   - Define failure states.
 
-- [-] **P4-5 | planning | Record go/no-go decision**
+- [x] **P4-5 | planning | Record go/no-go decision**
   - If go: convert findings into implementation tasks.
   - If no-go: document why and update the roadmap.
-  - Current decision: go for docs plus non-activating bridge scaffolding; do not start Phase 5 runtime activation until `P4-2` succeeds.
+  - Current decision: go. Discovery is sufficient to start a bridge-first export implementation phase while keeping Studio pull disabled.
 
-## Phase 5 - WP Remote implementation
+## Phase 5 - WP Remote bootstrap and discovery implementation
 
 ### Goal
 
-Ship WP Remote as the top actionable provider in Studio.
+Ship the first real WP Remote runtime slice:
+
+- bridge bootstrap,
+- bridge validation,
+- discovered-site listing,
+- Studio-side account save,
+- discovery-only pull gating.
 
 ### Exit criteria
 
-- Users can validate access, list sites, select a site, and pull it into Studio.
+- Users can validate a WP Remote bridge account and list a real discovered site in Studio.
+- The bridge can bootstrap and validate at least one real WP Remote site.
+- Studio keeps WP Remote discovery-only until export support lands.
 - MainWP still works.
-- Provider-specific errors are normalized.
 
 ### Tasks
 
-- [ ] **P5-1 | studio | Add WP Remote provider selector container**
-  - Reuse shared bridge account UI only if discovery confirms compatible inputs.
-  - Otherwise implement a WP Remote-specific account entry flow on the same provider-selection surface.
-  - Render WP Remote-specific copy and validation states.
+- [x] **P5-1 | studio | Add WP Remote provider selector container**
+  - Reused shared bridge account UI.
+  - Added WP Remote-specific selector copy and discovery messaging.
 
-- [ ] **P5-2 | studio-hetzner-bridge | Implement WP Remote adapter**
-  - Handle pairing/lookup/export.
-  - Keep secrets and signing server-side.
+- [x] **P5-2 | studio-hetzner-bridge | Implement WP Remote bootstrap and discovery adapter**
+  - Handles connection-key bootstrap, runtime credential persistence, callback signing, validation, and bridge-managed site registration.
+  - Keeps secrets and signing server-side.
 
-- [ ] **P5-3 | studio | Wire WP Remote through provider IPC and pull flow**
-  - Validate site listing.
-  - Validate pull start/poll/download.
-  - Confirm import handoff.
+- [x] **P5-3 | studio | Wire WP Remote through provider IPC and discovery flow**
+  - Validates site listing.
+  - Intentionally blocks pull start/poll/download in this phase.
 
-- [ ] **P5-4 | studio | Add tests for WP Remote renderer and IPC behavior**
-  - Cover account state.
-  - Cover inventory states.
-  - Cover failure states where practical.
+- [x] **P5-4 | studio | Add tests for WP Remote renderer and IPC behavior**
+  - Added targeted provider, bridge-client, and bridge-side contract coverage.
+  - Existing `use-add-site` / add-site harness failures remain pre-existing repo issues outside the Phase 5 files.
 
-- [ ] **P5-5 | validation | Run end-to-end WP Remote manual verification**
-  - Confirm chooser order.
-  - Confirm account validation.
-  - Confirm pull completion.
+- [x] **P5-5 | validation | Run end-to-end WP Remote manual verification**
+  - Confirmed chooser order.
+  - Confirmed bridge bootstrap and account validation.
+  - Confirmed discovered-site listing in Studio.
+  - Confirmed discovery-only gating remains in place.
 
-## Phase 6 - Flywheel and WP Engine discovery
+## Phase 6 - WP Remote export support
+
+### Goal
+
+Implement real bridge-side WP Remote backup/export support while keeping Studio pull disabled until artifact correctness is proven.
+
+### Exit criteria
+
+Detailed bridge implementation notes for this phase live in `studio-hetzner-bridge/docs/wpremote-export-support-plan.md`.
+
+- The bridge can create a durable WP Remote backup record.
+- Backup inventory is visible for validated WP Remote sites.
+- The bridge can export a downloadable Studio-compatible artifact.
+- Studio can manually import that artifact through the existing import path.
+
+### Tasks
+
+- [ ] **P6-1 | studio-hetzner-bridge | Add WP Remote export rollout/config gates**
+  - Add `WPREMOTE_EXPORT_ENABLED` or equivalent.
+  - Project `backupCreate: true` / `backupsRead: true` while keeping `pull: false`.
+  - Relax the export route guard so it does not depend on `site.capabilities.pull`.
+
+- [ ] **P6-2 | studio-hetzner-bridge | Extend WP Remote transport with streamed response support**
+  - Parse framed stream responses.
+  - Validate checksums.
+  - Preserve the final terminal envelope.
+
+- [ ] **P6-3 | studio-hetzner-bridge | Add staged snapshot assembly for WP Remote backup jobs**
+  - Build `database.sql` from DB wing responses.
+  - Reconstruct `wp-content` locally from FS wing responses.
+  - Write snapshot metadata under the backup directory.
+
+- [ ] **P6-4 | studio-hetzner-bridge | Replace the WP Remote unsupported executor with real backup/export execution**
+  - `runBackup()` should create the staged snapshot and manifest metadata.
+  - `runExport()` should package the staged snapshot into the standard Studio artifact.
+  - Keep `runImport()` and `runRestore()` unsupported.
+
+- [ ] **P6-5 | studio-hetzner-bridge | Add bridge tests for WP Remote backup/export**
+  - Cover transport stream parsing.
+  - Cover staged snapshot creation and cleanup.
+  - Cover export artifact creation.
+  - Cover route/capability behavior with `pull: false`.
+
+- [ ] **P6-6 | validation | Run real-site WP Remote export verification**
+  - Create a backup against the Avenue941 WP Remote fixture.
+  - Confirm backup inventory visibility.
+  - Confirm artifact download and extraction layout.
+  - Confirm manual Studio import of the produced artifact.
+
+## Phase 7 - Flywheel and WP Engine discovery
 
 ### Goal
 
@@ -221,24 +285,24 @@ Each provider ends with either an approved implementation contract or a document
 
 ### Tasks
 
-- [ ] **P6-1 | research | Inspect Local app artifacts in `Contents` for connected-account clues**
+- [ ] **P7-1 | research | Inspect Local app artifacts in `Contents` for connected-account clues**
   - Focus on user-facing account states and likely product expectations.
   - Treat this as directional, not as a substitute for real API discovery.
 
-- [ ] **P6-2 | research | Investigate Flywheel auth, site inventory, and export options**
+- [ ] **P7-2 | research | Investigate Flywheel auth, site inventory, and export options**
   - Use the available Flywheel environment and approved access paths.
   - Record whether a bridge-backed implementation is viable.
 
-- [ ] **P6-3 | research | Investigate WP Engine auth, site inventory, and export options**
+- [ ] **P7-3 | research | Investigate WP Engine auth, site inventory, and export options**
   - Identify likely account/login and site-selection patterns.
   - Record contract feasibility and open questions.
 
-- [ ] **P6-4 | planning | Decide discovery-provider UI policy**
+- [ ] **P7-4 | planning | Decide discovery-provider UI policy**
   - Keep visible as coming soon,
   - hide behind flags,
   - or defer completely until real support exists.
 
-## Phase 7 - Hardening and rollout support
+## Phase 8 - Hardening and rollout support
 
 ### Goal
 
@@ -252,22 +316,22 @@ Prepare the app and supporting docs for stable testing, rollout, and ongoing mai
 
 ### Tasks
 
-- [ ] **P7-1 | studio | Normalize provider error codes and user-facing messages**
+- [ ] **P8-1 | studio | Normalize provider error codes and user-facing messages**
   - Ensure similar failures render consistently across MainWP and WP Remote.
 
-- [ ] **P7-2 | studio | Add provider rollout flags if needed**
+- [ ] **P8-2 | studio | Add provider rollout flags if needed**
   - Use flags for newly shipped providers, not for already-stable MainWP behavior.
 
-- [ ] **P7-3 | studio-hetzner-bridge | Add provider-tagged audit and telemetry fields**
+- [ ] **P8-3 | studio-hetzner-bridge | Add provider-tagged audit and telemetry fields**
   - Improve debugging for multi-provider behavior.
 
-- [ ] **P7-4 | validation | Run required repo verification on implementation branches**
+- [ ] **P8-4 | validation | Run required repo verification on implementation branches**
   - `npx eslint --fix <modified files>`
   - `npm run typecheck`
   - `npm test -- <relevant test path>`
   - `npm start`
 
-- [ ] **P7-5 | docs | Update cross-repo runbooks as implementation lands**
+- [ ] **P8-5 | docs | Update cross-repo runbooks as implementation lands**
   - `studio`
   - `studio-hetzner-bridge`
   - `platform-infra`
