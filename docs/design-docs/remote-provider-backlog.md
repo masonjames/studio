@@ -7,7 +7,7 @@ This backlog tracks the work required to ship the remote-provider expansion road
 - `remote-provider-expansion-prd.md`
 - `remote-provider-architecture-and-phases.md`
 
-- **Status:** Draft
+- **Status:** In progress
 - **Last updated:** 2026-03-31
 
 ## Tracking conventions
@@ -33,25 +33,25 @@ Get the Studio UI and provider type model ready for the new lineup: WP Remote, M
 
 ### Tasks
 
-- [ ] **P1-1 | studio | Generalize provider identities in `apps/studio/src/modules/sync/types.ts`**
+- [x] **P1-1 | studio | Generalize provider identities in `apps/studio/src/modules/sync/types.ts`**
   - Add support for `wpRemote`, `flywheel`, and `wpEngine` while preserving `mainwpBridge` compatibility.
   - Confirm existing stored MainWP accounts remain representable.
 
-- [ ] **P1-2 | studio | Redesign `apps/studio/src/modules/sync/providers/registry.ts`**
+- [x] **P1-2 | studio | Redesign `apps/studio/src/modules/sync/providers/registry.ts`**
   - Replace Hetzner and DigitalOcean entries.
   - Add provider ordering and availability metadata.
   - Put WP Remote first.
 
-- [ ] **P1-3 | studio | Update chooser UI in `select-remote-provider.tsx` and related add-site screens**
+- [x] **P1-3 | studio | Update chooser UI in `select-remote-provider.tsx` and related add-site screens**
   - Render provider availability states.
   - Ensure discovery providers show accurate messaging.
   - Confirm chooser copy reflects the new roadmap.
 
-- [ ] **P1-4 | studio | Replace MainWP-specific branching in `pull-provider-remote-site.tsx`**
+- [x] **P1-4 | studio | Replace MainWP-specific branching in `pull-provider-remote-site.tsx`**
   - Move to a provider selector registry or equivalent dispatch pattern.
   - Route unsupported/discovery providers to a shared unavailable state.
 
-- [ ] **P1-5 | studio | Add or update tests for the chooser lineup**
+- [x] **P1-5 | studio | Add or update tests for the chooser lineup**
   - Cover ordering.
   - Cover availability rendering.
   - Cover discovery-provider click behavior.
@@ -70,16 +70,16 @@ Refactor the existing MainWP plumbing into shared bridge-backed provider infrast
 
 ### Tasks
 
-- [ ] **P2-1 | studio | Extract bridge-generic HTTP client from `modules/sync/providers/mainwp-bridge/client.ts`**
+- [x] **P2-1 | studio | Extract bridge-generic HTTP client from `modules/sync/providers/mainwp-bridge/client.ts`**
   - Create shared bridge client and schema modules.
   - Keep any MainWP-only copy or presentation concerns separate.
 
-- [ ] **P2-2 | studio | Extract shared bridge-backed account form for compatible providers**
+- [x] **P2-2 | studio | Extract shared bridge-backed account form for compatible providers**
   - Move common bridge URL/token inputs into a provider-neutral component.
   - Leave provider-specific copy in wrapper components.
   - Do not assume WP Remote uses this exact input shape until discovery confirms it.
 
-- [ ] **P2-3 | studio | Add provider-client delegation in `modules/sync/providers/ipc-handlers.ts`**
+- [x] **P2-3 | studio | Add provider-client delegation in `modules/sync/providers/ipc-handlers.ts`**
   - Replace MainWP-only lookup and operation branching.
   - Keep appdata persistence and locking behavior intact.
 
@@ -87,11 +87,11 @@ Refactor the existing MainWP plumbing into shared bridge-backed provider infrast
   - Keep renderer and main-process signatures synchronized.
   - Confirm all handlers remain async.
 
-- [ ] **P2-5 | studio | Generalize remote pull handling in `stores/sync/sync-operations-slice.ts`**
+- [x] **P2-5 | studio | Generalize remote pull handling in `stores/sync/sync-operations-slice.ts`**
   - Treat bridge-backed providers generically.
   - Keep WP.com behavior unchanged.
 
-- [ ] **P2-6 | studio | Add regression tests for MainWP after the refactor**
+- [x] **P2-6 | studio | Add regression tests for MainWP after the refactor**
   - Cover account validation path.
   - Cover site listing path.
   - Cover pull-operation state transitions where practical.
@@ -110,23 +110,24 @@ Make the existing bridge contract provider-aware while keeping MainWP stable.
 
 ### Tasks
 
-- [ ] **P3-1 | studio-hetzner-bridge | Generalize site inventory in `src/site-inventory.ts`**
+- [x] **P3-1 | studio-hetzner-bridge | Generalize site inventory in `src/site-inventory.ts`**
   - Add provider identity.
   - Preserve the current Hetzner/Dokploy-backed inventory behavior for existing bridge consumers as the first supported case.
 
-- [ ] **P3-2 | studio-hetzner-bridge | Update `src/app.ts` provider-facing responses**
+- [x] **P3-2 | studio-hetzner-bridge | Update `src/app.ts` provider-facing responses**
   - Add provider support metadata to health/capability checks.
   - Keep changes additive.
 
-- [ ] **P3-3 | studio-hetzner-bridge | Generalize execution seams in `src/execution.ts`**
+- [x] **P3-3 | studio-hetzner-bridge | Generalize execution seams in `src/execution.ts`**
   - Route by provider or adapter type as needed.
   - Avoid hard-coding WP Remote logic into the desktop app.
+  - Landed as a non-activating provider dispatch seam with explicit unsupported adapters for non-MainWP providers.
 
-- [ ] **P3-4 | studio-hetzner-bridge | Update README and internal docs**
+- [x] **P3-4 | studio-hetzner-bridge | Update README and internal docs**
   - Describe the service as the shared provider bridge.
   - Keep the repo name unchanged for now.
 
-- [ ] **P3-5 | platform-infra | Update service and rollout documentation**
+- [x] **P3-5 | platform-infra | Update service and rollout documentation**
   - Revise Hetzner-only language where needed.
   - Keep deployment instructions accurate for current operations.
 
@@ -145,27 +146,30 @@ Prove the exact contract required for WP Remote before implementation begins.
 
 ### Tasks
 
-- [ ] **P4-1 | research | Inspect `wpremote` plugin pairing and auth primitives**
+- [x] **P4-1 | research | Inspect `wpremote` plugin pairing and auth primitives**
   - Focus on connection-key flows.
   - Focus on signed callback behavior.
   - Document what the bridge must own.
+  - Discovery conclusion: the connection key is a pairing seed only; the bridge must own runtime callback credentials, signing material, and replay-safe request dispatch.
 
 - [ ] **P4-2 | research | Validate WP Remote assumptions against available fixtures**
   - Use the available WP Remote codebases and approved test environments.
   - Capture implementation constraints without storing secrets.
+  - Remaining gate: prove pairing bootstrap, signed callback reads, DB access, filesystem access, and artifact-assembly feasibility against at least one real WP Remote-managed site.
 
-- [ ] **P4-3 | studio-hetzner-bridge | Draft WP Remote bridge adapter contract**
+- [x] **P4-3 | studio-hetzner-bridge | Draft WP Remote bridge adapter contract**
   - Map WP Remote onto the existing site/job/artifact lifecycle if possible.
   - Document any contract gaps.
 
-- [ ] **P4-4 | studio | Draft WP Remote selector UX requirements**
+- [x] **P4-4 | studio | Draft WP Remote selector UX requirements**
   - Define account copy.
   - Define empty states.
   - Define failure states.
 
-- [ ] **P4-5 | planning | Record go/no-go decision**
+- [-] **P4-5 | planning | Record go/no-go decision**
   - If go: convert findings into implementation tasks.
   - If no-go: document why and update the roadmap.
+  - Current decision: go for docs plus non-activating bridge scaffolding; do not start Phase 5 runtime activation until `P4-2` succeeds.
 
 ## Phase 5 - WP Remote implementation
 

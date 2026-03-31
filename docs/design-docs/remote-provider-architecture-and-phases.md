@@ -320,20 +320,82 @@ Make the bridge contract provider-aware without breaking MainWP.
 
 ### Objective
 
-Define the exact adapter contract needed for WP Remote.
+Lock the exact bridge-owned contract needed for WP Remote without turning runtime support on yet.
 
-### Discovery questions
+### Phase 4 conclusions
 
-- How are sites paired and identified?
-- Which plugin operations are required for inventory and export?
-- Which secrets and signing responsibilities belong on the bridge?
-- Can WP Remote map onto the same job and artifact lifecycle already used by MainWP?
+This discovery pass resolves the core WP Remote shape:
+
+- Studio should keep talking only to the shared bridge.
+- WP Remote should be implemented as a **bridge-managed per-site callback adapter**.
+- The shared bridge account form remains the initial Studio-side account model for WP Remote.
+- The WP Remote plugin connection key should be treated as a **pairing seed**, not as a durable runtime credential.
+- Runtime callback credentials, request signing, and provider secrets must stay on the bridge.
+- The existing bridge job/artifact lifecycle should be reused:
+  - `backup` creates a logical manifest,
+  - `export` assembles the downloadable Studio import artifact.
+
+### Pairing and auth model
+
+The local plugin code indicates a signed callback protocol based on:
+
+- `bvplugname=wpremote`,
+- a bridge-owned `pubkey`,
+- a bridge-owned shared secret used for request MAC validation,
+- a `pubkeyname` whose matching private key must live on the bridge,
+- timestamp/replay protection,
+- callback wing dispatch.
+
+The bridge must therefore own:
+
+- connection-key bootstrap,
+- runtime account creation or update,
+- callback request signing,
+- secret storage,
+- replay-safe request dispatch.
+
+### Inventory model
+
+The local plugin code does not prove a cloud-side multi-site listing API. The safe model is:
+
+- the bridge maintains WP Remote site registrations,
+- `/v1/sites` exposes those bridge-managed registrations,
+- provider identity must be explicit as `wpRemote`,
+- canonical site identity is derived from callback data such as `siteurl`, `homeurl`, `wpurl`, `abspath`, `dbsig`, and `serversig`.
+
+### Export model
+
+The local code exposes callback primitives for:
+
+- site/system metadata,
+- database reads,
+- filesystem reads,
+- streamed responses,
+- account updates.
+
+It does not expose one obvious single-call archive export. The bridge should therefore treat WP Remote export as an orchestration problem behind the existing bridge routes.
+
+### Safe implementation scope for this phase
+
+Phase 4 may ship:
+
+- architecture and backlog updates,
+- a dedicated WP Remote adapter contract doc in the bridge repo,
+- internal non-activating bridge scaffolding for provider dispatch.
+
+Phase 4 must not ship:
+
+- `wpRemote` activation in `/healthz`,
+- Studio runtime client activation,
+- live bridge inventory for WP Remote,
+- claims of support before real callback validation succeeds.
 
 ### Exit criteria
 
-- a signed-off go/no-go decision exists,
 - a bridge-mediated contract is documented,
-- Studio-side UI requirements are final enough to implement.
+- Studio-side UX expectations are defined,
+- internal bridge seams are ready for a future WP Remote adapter,
+- a conditional go/no-go decision exists for Phase 5.
 
 ## Phase 5 - WP Remote implementation
 

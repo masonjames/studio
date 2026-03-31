@@ -99,11 +99,13 @@ This phase does **not** include:
 
 ### 1. Pull a site from WP Remote
 
+> Target-state Phase 5 journey. Current builds still discovery-gate WP Remote until live callback validation is complete.
+
 1. User opens **Add site** and chooses **Pull from hosting provider**.
 2. Studio shows WP Remote first in the provider picker.
-3. User chooses WP Remote and enters or selects the required account/bridge details.
-4. Studio validates the account against the shared bridge contract.
-5. User sees available WP Remote-connected sites.
+3. User chooses WP Remote and connects to a shared provider bridge account.
+4. Studio validates the bridge account against the shared bridge contract.
+5. User sees WP Remote sites that have already been paired and registered on that bridge.
 6. User selects a site, creates the local site, and Studio performs the remote export + import pipeline.
 7. The local site is created and ready to run in Studio.
 
@@ -144,7 +146,8 @@ This phase does **not** include:
 - Bridge-backed providers must use a shared account-validation pattern where possible.
 - The app must preserve existing `mainwpBridge` persisted accounts for backward compatibility.
 - The app must support additive provider-specific metadata without breaking old local data.
-- WP Remote may or may not share the same account-input shape as MainWP; discovery will determine whether it can reuse shared bridge-backed account UI.
+- Phase 4 discovery resolves the initial WP Remote account model to the same shared bridge URL/token entry flow already used for bridge-backed providers.
+- WP Remote connection keys, callback signing keys, and runtime secrets must remain bridge-owned and must not be stored in Studio appdata.
 
 ### Site inventory and pull
 
@@ -179,6 +182,7 @@ Because we do not yet have a confirmed contract from the local evidence availabl
 - Provider-specific errors should be normalized into friendly product language.
 - MainWP and WP Remote should feel like part of one coherent Studio flow even if the bridge adapters differ.
 - Flywheel and WP Engine should not be misleadingly interactive before they are actually supported.
+- The initial WP Remote empty state should clearly say that no WP Remote sites are paired on the selected bridge yet when inventory is empty.
 
 ## Technical requirements and constraints
 
@@ -229,7 +233,7 @@ The implementation should primarily work through these existing seams:
 
 ## Open questions
 
-- What exact bridge adapter is required for WP Remote’s connection-key and signed-callback model?
+- Which exact callback envelope and signing bootstrap details must be proven against a real WP Remote-managed site before Phase 5 starts?
 - Can Flywheel and WP Engine provide account login, site inventory, and export in a way Studio can support reliably?
 - Should discovery-only providers be visible by default or feature-flagged until their contracts are proven?
 - When should the bridge be renamed from `studio-hetzner-bridge` to a provider-neutral identity?
