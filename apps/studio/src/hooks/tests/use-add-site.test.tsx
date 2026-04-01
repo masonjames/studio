@@ -11,6 +11,15 @@ import { store } from 'src/stores';
 import type { SyncSite } from 'src/modules/sync/types';
 import type { WPCOM } from 'wpcom/types';
 
+vi.hoisted( () => {
+	vi.stubGlobal( 'localStorage', {
+		getItem: vi.fn( () => null ),
+		setItem: vi.fn(),
+		removeItem: vi.fn(),
+		clear: vi.fn(),
+	} );
+} );
+
 vi.mock( 'src/hooks/use-site-details' );
 vi.mock( 'src/hooks/use-feature-flags' );
 vi.mock( 'src/hooks/use-auth' );
@@ -36,7 +45,7 @@ vi.mock( 'src/hooks/use-import-export', () => ( {
 	} ),
 } ) );
 
-const mockConnectWpcomSites = vi.fn().mockResolvedValue( undefined );
+const mockConnectRemoteSites = vi.fn().mockResolvedValue( undefined );
 const mockShowOpenFolderDialog = vi.fn();
 const mockShowNotification = vi.fn();
 const mockGenerateProposedSitePath = vi.fn().mockResolvedValue( {
@@ -53,7 +62,8 @@ vi.mock( 'src/lib/get-ipc-api', () => ( {
 		showOpenFolderDialog: mockShowOpenFolderDialog,
 		showNotification: mockShowNotification,
 		getAllCustomDomains: vi.fn().mockResolvedValue( [] ),
-		connectWpcomSites: mockConnectWpcomSites,
+		connectRemoteSites: mockConnectRemoteSites,
+		connectWpcomSites: vi.fn(),
 		getConnectedWpcomSites: vi.fn().mockResolvedValue( [] ),
 		comparePaths: mockComparePaths,
 	} ),
@@ -67,10 +77,10 @@ const renderHookWithProvider = ( hook: () => ReturnType< typeof useAddSite > ) =
 
 function createRemoteSite( overrides: Partial< SyncSite > = {} ): SyncSite {
 	return {
-		id: 'wpRemote:site-1',
+		id: 'mainwpBridge:site-1',
 		remoteSiteId: 'site-1',
-		provider: 'wpRemote',
-		providerLabel: 'WP Remote',
+		provider: 'mainwpBridge',
+		providerLabel: 'MainWP / Bridge',
 		providerAccountId: 'account-1',
 		localSiteId: '',
 		name: 'Remote Site',
@@ -267,14 +277,13 @@ describe( 'useAddSite', () => {
 			await result.current.handleCreateSite( formValues );
 		} );
 
-		expect( mockConnectWpcomSites ).toHaveBeenCalledWith( [
+		expect( mockConnectRemoteSites ).toHaveBeenCalledWith( [
 			{
 				sites: [ remoteSite ],
 				localSiteId: createdSite.id,
 			},
 		] );
 		expect( mockPullSiteThunk ).toHaveBeenCalledWith( {
-			client: mockClient,
 			connectedSite: remoteSite,
 			selectedSite: createdSite,
 			options: { optionsToSync: [ 'all' ] },
@@ -316,11 +325,56 @@ describe( 'useAddSite', () => {
 		} );
 
 		expect( mockCreateSite ).not.toHaveBeenCalled();
-		expect( mockConnectWpcomSites ).not.toHaveBeenCalled();
+		expect( mockConnectRemoteSites ).not.toHaveBeenCalled();
 		expect( mockPullSiteThunk ).not.toHaveBeenCalled();
 		expect( mockShowNotification ).toHaveBeenCalledWith( {
 			title: 'Sync unavailable',
 			body: 'This remote site cannot be pulled into Studio yet.',
+		} );
+	} );
+
+	it( 'should keep WP Remote discovery-only until Phase 7 even when the bridge reports pull-ready capabilities', async () => {
+		const { result } = renderHookWithProvider( () => useAddSite() );
+
+		act( () => {
+			result.current.setSelectedRemoteSite(
+				createRemoteSite( {
+					id: 'wpRemote:site-1',
+					provider: 'wpRemote',
+					providerLabel: 'WP Remote',
+					syncSupport: 'syncable',
+					capabilities: {
+						pull: true,
+						push: false,
+						backupCreate: true,
+						backupsRead: true,
+						importCreate: false,
+						restoreCreate: false,
+					},
+				} )
+			);
+		} );
+
+		const formValues: CreateSiteFormValues = {
+			siteName: 'Discovery Only Remote Site',
+			sitePath: '/test/path',
+			phpVersion: '8.3',
+			wpVersion: 'latest',
+			useCustomDomain: false,
+			customDomain: null,
+			enableHttps: false,
+		};
+
+		await act( async () => {
+			await result.current.handleCreateSite( formValues );
+		} );
+
+		expect( mockCreateSite ).not.toHaveBeenCalled();
+		expect( mockConnectRemoteSites ).not.toHaveBeenCalled();
+		expect( mockPullSiteThunk ).not.toHaveBeenCalled();
+		expect( mockShowNotification ).toHaveBeenCalledWith( {
+			title: 'Sync unavailable',
+			body: 'WP Remote site pulls are not available in Studio until Phase 7.',
 		} );
 	} );
 } );

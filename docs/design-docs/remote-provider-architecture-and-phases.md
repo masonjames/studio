@@ -111,6 +111,12 @@ The chooser should support this order:
 3. `flywheel`
 4. `wpEngine`
 
+For the shipped Studio picker through Phase 6:
+
+- `mainwpBridge` is the only `available` provider,
+- `wpRemote` remains `discovery` until Phase 7 pull activation,
+- `flywheel` and `wpEngine` remain discovery entries.
+
 ### Provider availability model
 
 The provider registry should move from a simple available flag to an availability model such as:
@@ -124,6 +130,8 @@ This lets the same chooser render:
 - real providers,
 - discovery entries,
 - temporarily disabled providers.
+
+For the current rollout, WP Remote should use the **discovery** state in the top-level picker even while bridge-side export work continues.
 
 ### Provider definition shape
 
@@ -433,14 +441,15 @@ Ship the first real WP Remote runtime slice:
 - bridge-side callback signing and validation transport,
 - bridge-side validated site registration and `/v1/sites` exposure,
 - Studio runtime guards that keep WP Remote non-pullable in this phase,
+- shipped picker gating that keeps WP Remote discovery-only at the top level until Phase 7,
 - manual verification against a real Flywheel-hosted Avenue941 WP Remote site.
 
 ### Exit criteria
 
-- Studio can save a WP Remote bridge account,
+- internal validation can save a WP Remote bridge account,
 - the bridge can bootstrap and validate at least one real WP Remote site,
 - `/healthz.providerSupport.wpRemote` turns on when validated sites exist,
-- Studio lists the discovered site but keeps it discovery-only,
+- Studio lists the discovered site in validation paths but keeps the shipped top-level picker discovery-only,
 - MainWP regression coverage remains intact.
 
 ## Phase 6 - WP Remote export support
@@ -456,7 +465,7 @@ This phase remains **bridge-first**:
 - implement a real WP Remote `runBackup()` path,
 - implement a real WP Remote `runExport()` path,
 - expose backup inventory for validated WP Remote sites,
-- keep Studio-side `pull` disabled until artifact correctness and runtime compatibility are both proven.
+- keep Studio-side `pull` disabled and the shipped top-level picker discovery-only until artifact correctness and runtime compatibility are both proven.
 
 ### Design summary
 

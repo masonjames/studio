@@ -15,7 +15,7 @@ This phase expands the **Choose a hosting provider** flow in Studio so the app p
 
 The working product decisions are:
 
-- Make **WP Remote** the top provider choice and the primary new integration target.
+- Keep **WP Remote** first in the chooser roadmap, but leave it discovery-only in the shipped Studio picker until Phase 7 pull activation.
 - Keep **MainWP** available as the current regression baseline and fallback bridge-backed provider.
 - Remove **Hetzner** and **DigitalOcean** from the provider picker.
 - Replace them with **Flywheel** and **WP Engine**.
@@ -29,7 +29,7 @@ The provider-expansion stream has now cleared its first real WP Remote validatio
 What is proven:
 
 - Studio shows the intended provider lineup: **WP Remote**, **MainWP**, **Flywheel**, **WP Engine**.
-- Studio can save a bridge-backed WP Remote account and list a real discovered site.
+- Internal validation proved Studio can save a bridge-backed WP Remote account and list a real discovered site.
 - A local bridge can bootstrap and validate a WP Remote registration against a real Flywheel-hosted Avenue941 test site using:
   - a fresh connection key,
   - a bridge-owned callback signing key,
@@ -94,7 +94,7 @@ Today:
 ### Primary goals
 
 1. Show the correct provider lineup in Studio: **WP Remote**, **MainWP**, **Flywheel**, **WP Engine**.
-2. Make **WP Remote** the highest-priority integration and the most reliable non-WP.com provider path.
+2. Keep **WP Remote** as the highest-priority compatible-host integration target while the shipped Studio picker stays discovery-only until Phase 7.
 3. Preserve **MainWP** support during the refactor and use it as the regression baseline.
 4. Define a clear architecture for adding more providers without coupling the desktop app to provider-specific backend logic.
 5. Prepare the app for local testing and phased implementation across the app, bridge, and infrastructure repos.
@@ -174,6 +174,7 @@ This phase does **not** include:
   - **Available**
   - **Discovery / Coming soon**
   - **Disabled / Unsupported**
+- In the shipped Studio picker, **WP Remote** stays in the discovery state until Phase 7 even while bridge export work continues.
 - Providers that are not yet ready must not route the user into broken account or site selection flows.
 
 ### Account management
@@ -221,7 +222,7 @@ Studio should support a host-aware preference policy when the same site can appe
 Requirements:
 
 - For Flywheel-hosted sites, prefer **Flywheel-native** over **WP Remote** when both are available.
-- Keep WP Remote as the preferred top-level provider for compatible non-WP.com hosts.
+- Keep WP Remote as the preferred top-level provider for compatible non-WP.com hosts once Phase 7 activation ships.
 - Keep unsupported WP Remote runtimes discovery-only with a concrete reason instead of exposing a broken pull path.
 
 ## UX requirements
@@ -261,7 +262,7 @@ The implementation should primarily work through these existing seams:
 ### Product success
 
 - Studio loads with the new provider lineup visible on the chooser page.
-- WP Remote is documented and prioritized as the next reliable external-provider integration.
+- WP Remote is documented and prioritized as the next compatible-host external-provider integration while the shipped picker remains discovery-only.
 - MainWP remains the regression baseline and is not regressed by provider-model changes.
 - Flywheel and WP Engine are represented accurately in the roadmap and UI strategy.
 
@@ -299,7 +300,7 @@ The implementation should primarily work through these existing seams:
 
 ### Milestone B
 
-- WP Remote becomes fully actionable through the shared bridge.
+- Bridge-side WP Remote export is validated for compatible hosts, while Studio pull remains discovery-only until Phase 7 activation.
 - Flywheel and WP Engine discovery concludes with either implementation approval or explicit deferral.
 
 ### Milestone C

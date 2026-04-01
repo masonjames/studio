@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createBridgeBackupJob, getBridgeJob } from './bridge/client';
+import { createBridgeBackupJob, downloadBridgeJobArtifact, getBridgeJob } from './bridge/client';
 import { getRemoteProviderClient } from './provider-clients';
 import type { RemoteProviderAccount, RemotePullOperation } from 'src/modules/sync/types';
 
@@ -128,7 +128,34 @@ describe( 'getRemoteProviderClient', () => {
 	it( 'blocks WP Remote pull operations during the discovery-only Phase 5 slice', async () => {
 		await expect(
 			getRemoteProviderClient( 'wpRemote' ).startPull( wpRemoteAccount, 'site-2' )
-		).rejects.toThrow( 'WP Remote site pulls are not supported yet.' );
+		).rejects.toThrow( 'WP Remote site pulls are not available in Studio until Phase 7.' );
 		expect( createBridgeBackupJob ).not.toHaveBeenCalled();
+	} );
+
+	it( 'blocks WP Remote pull polling during the discovery-only Phase 5 slice', async () => {
+		const operation: RemotePullOperation = {
+			kind: 'bridge',
+			provider: 'wpRemote',
+			providerAccountId: 'account-2',
+			remoteSiteId: 'site-2',
+			stage: 'backup',
+			backupJobId: 'job-2',
+		};
+
+		await expect(
+			getRemoteProviderClient( 'wpRemote' ).pollPull( wpRemoteAccount, operation )
+		).rejects.toThrow( 'WP Remote site pulls are not available in Studio until Phase 7.' );
+		expect( getBridgeJob ).not.toHaveBeenCalled();
+	} );
+
+	it( 'blocks WP Remote artifact downloads during the discovery-only Phase 5 slice', async () => {
+		await expect(
+			getRemoteProviderClient( 'wpRemote' ).downloadPullArtifact(
+				wpRemoteAccount,
+				'job-2',
+				'operation-2'
+			)
+		).rejects.toThrow( 'WP Remote site pulls are not available in Studio until Phase 7.' );
+		expect( downloadBridgeJobArtifact ).not.toHaveBeenCalled();
 	} );
 } );

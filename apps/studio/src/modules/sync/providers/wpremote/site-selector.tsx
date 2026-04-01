@@ -30,7 +30,7 @@ export default function WpRemoteSiteSelector( {
 				editHeading: __( 'Edit WP Remote bridge account' ),
 				labelPlaceholder: __( 'Production WP Remote bridge' ),
 				routeSupportWarning: __(
-					'This bridge can list WP Remote sites, but pull/export support is still disabled. You can browse discovered sites here, but Studio cannot pull them yet.'
+					'This bridge can list WP Remote sites, but Studio keeps WP Remote discovery-only until Phase 7 while bridge export verification continues for compatible hosts.'
 				),
 			} }
 		/>

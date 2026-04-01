@@ -10,6 +10,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Button from 'src/components/button';
 import { getIpcApi } from 'src/lib/get-ipc-api';
 import { SitesListContent } from 'src/modules/sync/components/sync-sites-modal-selector';
+import {
+	getStudioPullActivationMessage,
+	getStudioPullCapability,
+} from 'src/modules/sync/providers/pull-activation';
 import BridgeAccountForm, {
 	bridgeAccountToFormValues,
 	createDefaultBridgeAccountFormValues,
@@ -47,6 +51,7 @@ export default function BridgeSiteSelector( {
 	copy,
 }: BridgeSiteSelectorProps ) {
 	const { __ } = useI18n();
+	const pullActivationMessage = getStudioPullActivationMessage( provider );
 	const [ accounts, setAccounts ] = useState< RemoteProviderAccount[] >( [] );
 	const [ selectedAccountId, setSelectedAccountId ] = useState< string | undefined >();
 	const [ sites, setSites ] = useState< SyncSite[] >( [] );
@@ -103,7 +108,7 @@ export default function BridgeSiteSelector( {
 				}
 
 				setRouteSupport( result.routeSupport );
-				const canUseBridgePull = Boolean(
+				const routeSupportAllowsPull = Boolean(
 					result.routeSupport?.backupInventory && result.routeSupport?.export
 				);
 				const normalizedSites = result.sites.map( ( site ) => ( {
@@ -111,11 +116,18 @@ export default function BridgeSiteSelector( {
 					providerAccountId: selectedAccountId,
 					capabilities: {
 						...site.capabilities,
-						pull: site.capabilities.pull && canUseBridgePull,
+						pull: getStudioPullCapability(
+							provider,
+							site.capabilities.pull && routeSupportAllowsPull
+						),
 						push: false,
 					},
-					syncSupport:
-						site.capabilities.pull && canUseBridgePull ? site.syncSupport : 'unsupported',
+					syncSupport: getStudioPullCapability(
+						provider,
+						site.capabilities.pull && routeSupportAllowsPull
+					)
+						? site.syncSupport
+						: 'unsupported',
 				} ) );
 				setSites( normalizedSites );
 				if (
@@ -143,6 +155,7 @@ export default function BridgeSiteSelector( {
 		};
 	}, [
 		__,
+		provider,
 		selectedAccountId,
 		selectedRemoteSite?.id,
 		selectedRemoteSite?.providerAccountId,
@@ -253,9 +266,10 @@ export default function BridgeSiteSelector( {
 					/>
 				</VStack>
 				<VStack className="flex-1 min-w-0" alignment="top" spacing={ 3 }>
-					{ routeSupport && ! ( routeSupport.backupInventory && routeSupport.export ) && (
+					{ ( pullActivationMessage ||
+						( routeSupport && ! ( routeSupport.backupInventory && routeSupport.export ) ) ) && (
 						<Notice status="warning" isDismissible={ false }>
-							{ copy.routeSupportWarning }
+							{ pullActivationMessage ?? copy.routeSupportWarning }
 						</Notice>
 					) }
 					{ sitesError && (

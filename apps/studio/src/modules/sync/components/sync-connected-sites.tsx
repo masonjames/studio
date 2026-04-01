@@ -35,8 +35,13 @@ import {
 	convertTreeToPushOptions,
 } from 'src/modules/sync/lib/convert-tree-to-sync-options';
 import { getSiteEnvironment } from 'src/modules/sync/lib/environment-utils';
+import {
+	canStudioPullSite,
+	getStudioPullActivationMessage,
+} from 'src/modules/sync/providers/pull-activation';
 import { useAppDispatch, useI18nLocale, useRootSelector } from 'src/stores';
 import {
+	getPullRetryOptions,
 	syncOperationsSelectors,
 	syncOperationsThunks,
 	syncOperationsActions,
@@ -58,6 +63,9 @@ const SyncConnectedSiteControls = ( {
 	const { __ } = useI18n();
 	const isOffline = useOffline();
 	const dispatch = useAppDispatch();
+	const pullUnavailableMessage =
+		getStudioPullActivationMessage( connectedSite.provider ) ??
+		__( 'Pull is not available for this provider yet.' );
 	const [ syncDialogType, setSyncDialogType ] = useState< 'pull' | 'push' | null >( null );
 	const isAnySitePulling = useRootSelector( syncOperationsSelectors.selectIsAnySitePulling );
 	const isAnySitePushing = useRootSelector( syncOperationsSelectors.selectIsAnySitePushing );
@@ -102,11 +110,8 @@ const SyncConnectedSiteControls = ( {
 							{ __( 'Pull' ) }
 						</Button>
 					</Tooltip>
-				) : ! connectedSite.capabilities.pull ? (
-					<Tooltip
-						text={ __( 'Pull is not available for this provider yet.' ) }
-						placement="top-start"
-					>
+				) : ! canStudioPullSite( connectedSite ) ? (
+					<Tooltip text={ pullUnavailableMessage } placement="top-start">
 						<Button variant="link" disabled={ true }>
 							<Icon icon={ cloudDownload } />
 							{ __( 'Pull' ) }
@@ -251,6 +256,8 @@ const SyncConnectedSitesSectionItem = ( {
 	const pullImportState = importState[ connectedSite.localSiteId ];
 	let sitePullStatusMessage = '';
 	let sitePullStatusProgress = 0;
+	const canRetryPull = canStudioPullSite( connectedSite );
+	const retryPullOptions = getPullRetryOptions( sitePullState );
 	if ( pullImportState ) {
 		if ( pullImportState.progress === 100 ) {
 			sitePullStatusMessage = __( 'Applying final details…' );
@@ -389,22 +396,25 @@ const SyncConnectedSitesSectionItem = ( {
 							>
 								{ __( 'Import failed. Please try again.' ) }
 							</ClearAction>
-							<Button
-								variant="link"
-								className="!text-frame-text hover:!text-frame-theme"
-								onClick={ () => {
-									clearPullState( selectedSite.id, connectedSite.id );
-									void dispatch(
-										syncOperationsThunks.pullSite( {
-											connectedSite,
-											selectedSite,
-										} )
-									);
-								} }
-							>
-								<Icon icon={ cloudDownload } />
-								{ __( 'Retry' ) }
-							</Button>
+							{ canRetryPull && (
+								<Button
+									variant="link"
+									className="!text-frame-text hover:!text-frame-theme"
+									onClick={ () => {
+										clearPullState( selectedSite.id, connectedSite.id );
+										void dispatch(
+											syncOperationsThunks.pullSite( {
+												connectedSite,
+												selectedSite,
+												options: retryPullOptions,
+											} )
+										);
+									} }
+								>
+									<Icon icon={ cloudDownload } />
+									{ __( 'Retry' ) }
+								</Button>
+							) }
 						</div>
 					) }
 					{ isPushError && (

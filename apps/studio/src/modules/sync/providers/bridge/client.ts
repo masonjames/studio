@@ -4,6 +4,7 @@ import nodePath from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { getSyncBackupTempPath } from 'src/lib/get-sync-backup-temp-path';
+import { getStudioPullCapability } from 'src/modules/sync/providers/pull-activation';
 import { getExternalRemoteProvider } from 'src/modules/sync/providers/registry';
 import {
 	buildRemoteSiteKey,
@@ -158,7 +159,13 @@ function assertBridgeSupportsProvider(
 	provider: TestRemoteProviderAccountInput[ 'provider' ],
 	health: BridgeHealthResponse
 ) {
-	if ( ! health.providerSupport || health.providerSupport[ provider ] !== false ) {
+	const advertisedSupport = health.providerSupport?.[ provider ];
+
+	if ( provider === 'mainwpBridge' ) {
+		if ( advertisedSupport !== false ) {
+			return;
+		}
+	} else if ( advertisedSupport === true ) {
 		return;
 	}
 
@@ -189,11 +196,12 @@ function toSyncSite( account: RemoteProviderAccount, site: PublicBridgeSite ): S
 		);
 	}
 
-	const canPull = Boolean(
+	const bridgeCanPull = Boolean(
 		site.capabilities.pull &&
 			site.capabilities.backupCreate !== false &&
 			site.capabilities.backupsRead !== false
 	);
+	const canPull = getStudioPullCapability( siteProvider, bridgeCanPull );
 
 	return {
 		id: buildRemoteSiteKey( siteProvider, site.id ),

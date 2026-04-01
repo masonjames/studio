@@ -24,8 +24,8 @@ This backlog tracks the work required to ship the remote-provider expansion road
 - Shared bridge-backed provider plumbing is complete.
 - Provider-aware bridge contract generalization is complete.
 - WP Remote bootstrap/discovery is now manually validated on a real Flywheel-hosted Avenue941 test site.
-- WP Remote remains intentionally discovery-only in Studio.
-- Bridge-side WP Remote export is implemented in code and under live verification.
+- The shipped Studio picker keeps WP Remote discovery-only until Phase 7.
+- Bridge-side WP Remote export is implemented in code, but real-site verification is still in progress before any Studio pull activation.
 - Flywheel now has a separate native-support track because unpatched Flywheel WP Remote filesystem export is not reliable.
 
 ## Phase 1 - Studio provider model and chooser updates
@@ -93,7 +93,7 @@ Refactor the existing MainWP plumbing into shared bridge-backed provider infrast
   - Replace MainWP-only lookup and operation branching.
   - Keep appdata persistence and locking behavior intact.
 
-- [ ] **P2-4 | studio | Align `preload.ts`, top-level `ipc-handlers.ts`, and `ipc-types.d.ts`**
+- [x] **P2-4 | studio | Align `preload.ts`, top-level `ipc-handlers.ts`, and `ipc-types.d.ts`**
   - Keep renderer and main-process signatures synchronized.
   - Confirm all handlers remain async.
 
@@ -196,9 +196,9 @@ Ship the first real WP Remote runtime slice:
 
 ### Exit criteria
 
-- Users can validate a WP Remote bridge account and list a real discovered site in Studio.
+- Internal validation can save a WP Remote bridge account and list a real discovered site in Studio.
 - The bridge can bootstrap and validate at least one real WP Remote site.
-- Studio keeps WP Remote discovery-only until export support lands.
+- The shipped top-level picker keeps WP Remote discovery-only until Phase 7.
 - MainWP still works.
 
 ### Tasks
@@ -214,6 +214,7 @@ Ship the first real WP Remote runtime slice:
 - [x] **P5-3 | studio | Wire WP Remote through provider IPC and discovery flow**
   - Validates site listing.
   - Intentionally blocks pull start/poll/download in this phase.
+  - Keeps the shipped top-level picker discovery-only until Phase 7.
 
 - [x] **P5-4 | studio | Add tests for WP Remote renderer and IPC behavior**
   - Added targeted provider, bridge-client, and bridge-side contract coverage.
@@ -279,6 +280,7 @@ Detailed bridge implementation notes for this phase live in `studio-hetzner-brid
     - backup inventory visibility,
     - export artifact generation,
     - manual Studio import.
+  - The shipped Studio picker must remain discovery-only until these gates and Phase 7 activation are complete.
 
 - [ ] **P6-7 | studio-hetzner-bridge | Add WP Remote runtime compatibility canary and capability downgrade**
   - Detect sites where WP Remote validation succeeds but filesystem export does not.
@@ -409,7 +411,7 @@ Prepare the app and supporting docs for stable testing, rollout, and ongoing mai
 - “WP Remove” means **WP Remote**.
 - `mainwpBridge` stays as the stored provider identity for compatibility.
 - The existing bridge remains the single provider-bridge surface.
-- WP Remote is the preferred provider for compatible non-WP.com hosts.
+- WP Remote is the preferred eventual provider for compatible non-WP.com hosts, but the shipped picker stays discovery-only until Phase 7.
 - Flywheel requires a native support track regardless of WP Remote because unpatched Flywheel WP Remote filesystem export is not reliable.
 - WP Engine remains discovery-gated until a real contract is confirmed.
 - Packaging and Cloudflare R2 release-artifact work are follow-on operational concerns, not core provider-expansion scope.

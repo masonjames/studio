@@ -9,10 +9,10 @@ const bridgeBackedRemoteProviderSchema = z.enum( [
 
 export const bridgeProviderSupportSchema = z
 	.object( {
-		mainwpBridge: z.boolean().default( false ),
-		wpRemote: z.boolean().default( false ),
-		flywheel: z.boolean().default( false ),
-		wpEngine: z.boolean().default( false ),
+		mainwpBridge: z.boolean(),
+		wpRemote: z.boolean(),
+		flywheel: z.boolean(),
+		wpEngine: z.boolean(),
 	} )
 	.partial();
 

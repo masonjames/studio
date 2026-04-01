@@ -8,6 +8,7 @@ import {
 	testBridgeAccountConnection,
 	type BridgeAccountConnectionResult,
 } from './bridge/client';
+import { assertStudioPullActivatedForProvider } from './pull-activation';
 import { hasRemoteProviderClient, type SupportedRemoteProviderClient } from './supported-providers';
 import type { BridgeHealthResponse } from './bridge/schemas';
 import type {
@@ -47,12 +48,11 @@ function getBridgeRunningProgress( stage: BridgePullOperation[ 'stage' ], percen
 	return 55 + ( ( percent ?? 0 ) / 100 ) * 5;
 }
 
-const WP_REMOTE_PULL_NOT_SUPPORTED_MESSAGE = 'WP Remote site pulls are not supported yet.';
-
 const sharedBridgeClient: RemoteProviderClient = {
 	testAccount: testBridgeAccountConnection,
 	listSites: listBridgeSites,
 	async startPull( account, remoteSiteId ) {
+		assertStudioPullActivatedForProvider( account.provider );
 		const backupJob = await createBridgeBackupJob( account, remoteSiteId );
 
 		return {
@@ -65,6 +65,7 @@ const sharedBridgeClient: RemoteProviderClient = {
 		};
 	},
 	async pollPull( account, operation ) {
+		assertStudioPullActivatedForProvider( account.provider );
 		if ( operation.kind !== 'bridge' ) {
 			throw new Error( 'Unsupported remote pull operation.' );
 		}
@@ -185,19 +186,15 @@ const sharedBridgeClient: RemoteProviderClient = {
 			artifactSizeBytes: exportJob.artifact?.sizeBytes,
 		};
 	},
-	downloadPullArtifact: downloadBridgeJobArtifact,
-};
-
-const wpRemoteBridgeClient: RemoteProviderClient = {
-	...sharedBridgeClient,
-	async startPull() {
-		throw new Error( WP_REMOTE_PULL_NOT_SUPPORTED_MESSAGE );
+	async downloadPullArtifact( account, jobId, operationId ) {
+		assertStudioPullActivatedForProvider( account.provider );
+		return downloadBridgeJobArtifact( account, jobId, operationId );
 	},
 };
 
 const REMOTE_PROVIDER_CLIENTS: Record< SupportedRemoteProviderClient, RemoteProviderClient > = {
 	mainwpBridge: sharedBridgeClient,
-	wpRemote: wpRemoteBridgeClient,
+	wpRemote: sharedBridgeClient,
 };
 
 export function getRemoteProviderClient(

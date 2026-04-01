@@ -101,7 +101,7 @@ describe( 'bridge client provider contract', () => {
 		] );
 	} );
 
-	it( 'maps WP Remote bridge sites while keeping pull disabled when the site capabilities say so', async () => {
+	it( 'keeps WP Remote non-pullable in Studio even when the bridge advertises pull-ready capabilities', async () => {
 		fetchMock
 			.mockResolvedValueOnce(
 				jsonResponse( {
@@ -124,9 +124,9 @@ describe( 'bridge client provider contract', () => {
 							activeUrl: 'https://seeded.example.com',
 							urls: [ 'https://seeded.example.com' ],
 							capabilities: {
-								pull: false,
-								backupCreate: false,
-								backupsRead: false,
+								pull: true,
+								backupCreate: true,
+								backupsRead: true,
 							},
 						},
 					],
@@ -144,8 +144,8 @@ describe( 'bridge client provider contract', () => {
 				syncSupport: 'unsupported',
 				capabilities: expect.objectContaining( {
 					pull: false,
-					backupCreate: false,
-					backupsRead: false,
+					backupCreate: true,
+					backupsRead: true,
 				} ),
 			} ),
 		] );
@@ -169,6 +169,27 @@ describe( 'bridge client provider contract', () => {
 					flywheel: false,
 					wpEngine: false,
 				},
+			} )
+		);
+
+		await expect( testBridgeAccountConnection( input ) ).rejects.toThrow(
+			'This bridge does not advertise support for WP Remote.'
+		);
+		expect( fetchMock ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'rejects WP Remote bridge connections when providerSupport is omitted by healthz', async () => {
+		const input: TestRemoteProviderAccountInput = {
+			provider: 'wpRemote',
+			bridgeUrl: 'https://bridge.example.com',
+			readToken: 'read-token',
+			mutateToken: 'write-token',
+			tokenMode: 'split',
+		};
+
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse( {
+				ok: true,
 			} )
 		);
 
@@ -251,5 +272,71 @@ describe( 'bridge client provider contract', () => {
 			provider: 'mainwpBridge',
 			name: 'Legacy MainWP Site',
 		} );
+	} );
+
+	it( 'keeps MainWP account validation compatible with older bridges that omit providerSupport', async () => {
+		const input: TestRemoteProviderAccountInput = {
+			provider: 'mainwpBridge',
+			bridgeUrl: 'https://bridge.example.com',
+			readToken: 'read-token',
+			mutateToken: 'write-token',
+			tokenMode: 'split',
+		};
+
+		fetchMock
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					ok: true,
+				} )
+			)
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					sites: [],
+				} )
+			);
+
+		await expect( testBridgeAccountConnection( input ) ).resolves.toMatchObject( {
+			health: expect.objectContaining( {
+				ok: true,
+			} ),
+		} );
+		expect( fetchMock ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'keeps MainWP account validation compatible when providerSupport omits the mainwpBridge key', async () => {
+		const input: TestRemoteProviderAccountInput = {
+			provider: 'mainwpBridge',
+			bridgeUrl: 'https://bridge.example.com',
+			readToken: 'read-token',
+			mutateToken: 'write-token',
+			tokenMode: 'split',
+		};
+
+		fetchMock
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					ok: true,
+					providerSupport: {
+						wpRemote: true,
+						flywheel: false,
+						wpEngine: false,
+					},
+				} )
+			)
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					sites: [],
+				} )
+			);
+
+		await expect( testBridgeAccountConnection( input ) ).resolves.toMatchObject( {
+			health: expect.objectContaining( {
+				ok: true,
+				providerSupport: expect.objectContaining( {
+					wpRemote: true,
+				} ),
+			} ),
+		} );
+		expect( fetchMock ).toHaveBeenCalledTimes( 2 );
 	} );
 } );

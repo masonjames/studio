@@ -6,6 +6,10 @@ import { SYNC_PUSH_SIZE_LIMIT_BYTES, SYNC_PUSH_SIZE_LIMIT_GB } from 'src/constan
 import { generateStateId } from 'src/hooks/sync-sites/use-pull-push-states';
 import { getIpcApi } from 'src/lib/get-ipc-api';
 import { getHostnameFromUrl } from 'src/lib/url-utils';
+import {
+	canStudioPullSite,
+	getStudioPullActivationMessage,
+} from 'src/modules/sync/providers/pull-activation';
 import { hasRemoteProviderClient } from 'src/modules/sync/providers/supported-providers';
 import {
 	getWpcomNumericSiteId,
@@ -50,20 +54,21 @@ async function updateSiteTimestamp( {
 	] );
 }
 
+export type PullSiteOptions = {
+	optionsToSync: SyncOption[];
+	include_path_list?: string[];
+};
+
 export type SyncBackupState = {
 	remoteSiteId: string;
 	legacyRemoteSiteId?: number;
 	backupId: number | null;
 	providerOperation?: RemotePullOperation;
+	pullOptions?: PullSiteOptions;
 	status: PullStateProgressInfo;
 	downloadUrl: string | null;
 	selectedSite: SiteDetails;
 	remoteSiteUrl: string;
-};
-
-export type PullSiteOptions = {
-	optionsToSync: SyncOption[];
-	include_path_list?: string[];
 };
 
 export type PullStates = Record< string, SyncBackupState >;
@@ -556,11 +561,17 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 		const remoteSiteId = connectedSite.id;
 		const remoteSiteUrl = connectedSite.url;
 		const wpcomRemoteSiteId = getWpcomNumericSiteId( connectedSite );
+		const pullOptions: PullSiteOptions = {
+			optionsToSync: [ ...options.optionsToSync ],
+			include_path_list: options.include_path_list ? [ ...options.include_path_list ] : undefined,
+		};
 
-		if ( ! connectedSite.capabilities.pull ) {
+		if ( ! canStudioPullSite( connectedSite ) ) {
 			return rejectWithValue( {
 				title: sprintf( __( 'Error pulling from %s' ), connectedSite.name ),
-				message: __( 'Pull is not available for this provider yet.' ),
+				message:
+					getStudioPullActivationMessage( connectedSite.provider ) ??
+					__( 'Pull is not available for this provider yet.' ),
 			} );
 		}
 
@@ -571,6 +582,7 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 				state: {
 					backupId: null,
 					providerOperation: undefined,
+					pullOptions,
 					legacyRemoteSiteId: wpcomRemoteSiteId,
 					status: pullStatesProgressInfo[ 'in-progress' ],
 					downloadUrl: null,
@@ -594,8 +606,8 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 					options: SyncOption[];
 					include_path_list?: string[];
 				} = {
-					options: options.optionsToSync,
-					include_path_list: options.include_path_list,
+					options: pullOptions.optionsToSync,
+					include_path_list: pullOptions.include_path_list,
 				};
 
 				const rawResponse = await client.req.post( {

@@ -8,6 +8,15 @@ import { createTestStore } from 'src/lib/test-utils';
 import AddSite from 'src/modules/add-site';
 import { useGetBlueprints } from 'src/stores/wpcom-api';
 
+vi.hoisted( () => {
+	vi.stubGlobal( 'localStorage', {
+		getItem: vi.fn( () => null ),
+		setItem: vi.fn(),
+		removeItem: vi.fn(),
+		clear: vi.fn(),
+	} );
+} );
+
 vi.mock( 'src/stores/certificate-trust-api', async () => {
 	const actual = await vi.importActual( 'src/stores/certificate-trust-api' );
 	return {
@@ -661,7 +670,7 @@ describe( 'AddSite', () => {
 		} );
 	} );
 
-	it( 'shows the new external provider lineup with WP Remote and MainWP selectable today', async () => {
+	it( 'shows the new external provider lineup with WP Remote discovery-only until Phase 7', async () => {
 		const user = userEvent.setup();
 		renderWithProvider( <AddSite /> );
 
@@ -687,7 +696,7 @@ describe( 'AddSite', () => {
 			);
 
 		expect( providerButtons ).toEqual( [ 'WP Remote', 'MainWP', 'Flywheel', 'WP Engine' ] );
-		expect( wpRemoteButton ).toBeEnabled();
+		expect( wpRemoteButton ).toBeDisabled();
 		expect( mainwpButton ).toBeEnabled();
 		expect( flywheelButton ).toBeDisabled();
 		expect( wpEngineButton ).toBeDisabled();
@@ -695,8 +704,6 @@ describe( 'AddSite', () => {
 		expect( screen.queryByRole( 'button', { name: /DigitalOcean/i } ) ).not.toBeInTheDocument();
 
 		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
-		await user.click( wpRemoteButton );
-		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
 		await user.click( mainwpButton );
 		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
 	} );

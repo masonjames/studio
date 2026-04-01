@@ -10,6 +10,10 @@ import { useContentTabs } from 'src/hooks/use-content-tabs';
 import { useImportExport } from 'src/hooks/use-import-export';
 import { useSiteDetails } from 'src/hooks/use-site-details';
 import { getIpcApi } from 'src/lib/get-ipc-api';
+import {
+	canStudioCreateSiteFromRemotePull,
+	getStudioPullActivationMessage,
+} from 'src/modules/sync/providers/pull-activation';
 import { useAppDispatch } from 'src/stores';
 import { syncOperationsThunks } from 'src/stores/sync';
 import { useConnectSiteMutation } from 'src/stores/sync/connected-sites';
@@ -43,10 +47,6 @@ export interface PathValidationResult {
 	isEmpty: boolean;
 	isWordPress: boolean;
 	error?: string;
-}
-
-function canPullRemoteSite( site: SyncSite | undefined ) {
-	return Boolean( site?.syncSupport === 'syncable' && site.capabilities.pull );
 }
 
 export function useAddSite() {
@@ -241,10 +241,12 @@ export function useAddSite() {
 	const handleCreateSite = useCallback(
 		async ( formValues: CreateSiteFormValues ) => {
 			try {
-				if ( selectedRemoteSite && ! canPullRemoteSite( selectedRemoteSite ) ) {
+				if ( selectedRemoteSite && ! canStudioCreateSiteFromRemotePull( selectedRemoteSite ) ) {
 					getIpcApi().showNotification( {
 						title: __( 'Sync unavailable' ),
-						body: __( 'This remote site cannot be pulled into Studio yet.' ),
+						body:
+							getStudioPullActivationMessage( selectedRemoteSite.provider ) ??
+							__( 'This remote site cannot be pulled into Studio yet.' ),
 					} );
 					return;
 				}
