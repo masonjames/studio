@@ -5,7 +5,7 @@
 This document translates the remote-provider product direction into an implementation strategy across the Studio app, the shared bridge, and supporting infrastructure.
 
 - **Status:** In progress
-- **Last updated:** 2026-03-31
+- **Last updated:** 2026-04-01
 - **Primary repo:** `studio`
 - **Companion docs:** `remote-provider-expansion-prd.md`, `remote-provider-backlog.md`
 
@@ -33,7 +33,7 @@ Completed and validated:
 - WP Remote bridge bootstrap and discovery against a real Flywheel-hosted Avenue941 test site,
 - Studio-side WP Remote account save and discovered-site listing in discovery-only mode.
 
-The next implementation phase should therefore focus on **bridge-owned WP Remote backup/export support** while leaving Studio pull activation disabled until artifact generation is proven.
+The next implementation phase should therefore focus on **bridge-owned WP Remote backup/export support for compatible hosts**, while a separate Flywheel-native track is planned for Flywheel-hosted sites that cannot rely on unpatched WP Remote filesystem export.
 
 ## Current architecture
 
@@ -93,9 +93,12 @@ Why:
 - The local `wpremote` codebase suggests a signed request model.
 - Bridge-side execution is safer and easier to standardize.
 
-### 4. Treat Flywheel and WP Engine as discovery-first providers
+### 4. Split Flywheel from WP Engine in the roadmap
 
-The product goal is full support, but the immediate engineering posture should be discovery-gated because current local artifacts do not yet prove a viable contract.
+The product goal remains full support for both, but the engineering posture is now different:
+
+- **Flywheel** needs a native support track because unpatched Flywheel WP Remote filesystem export is not reliable.
+- **WP Engine** remains discovery-gated until a viable contract is proven.
 
 ## Target Studio architecture
 
@@ -220,7 +223,7 @@ The bridge should ultimately support an adapter pattern such as:
 
 - `mainwpBridge` -> current bridge-backed flow
 - `wpRemote` -> signed callback / connection-key flow
-- `flywheel` -> discovery result pending
+- `flywheel` -> native support track required
 - `wpEngine` -> discovery result pending
 
 We should avoid encoding provider-specific orchestration logic directly into Studio wherever the bridge can own it.
@@ -444,22 +447,22 @@ Ship the first real WP Remote runtime slice:
 
 ### Objective
 
-Add real bridge-side WP Remote backup/export support without yet enabling Studio pull.
+Add real bridge-side WP Remote backup/export support for **compatible hosts** without yet enabling Studio pull.
 
 ### Scope
 
-This phase should remain **bridge-first**:
+This phase remains **bridge-first**:
 
 - implement a real WP Remote `runBackup()` path,
 - implement a real WP Remote `runExport()` path,
 - expose backup inventory for validated WP Remote sites,
-- keep Studio-side `pull` disabled until artifact correctness is proven.
+- keep Studio-side `pull` disabled until artifact correctness and runtime compatibility are both proven.
 
 ### Design summary
 
 Detailed bridge implementation notes for this phase live in `studio-hetzner-bridge/docs/wpremote-export-support-plan.md`.
 
-The bridge should preserve its existing semantics:
+The bridge preserves its existing semantics:
 
 - `POST /v1/sites/:siteId/backup` creates a durable bridge-owned backup record,
 - `POST /v1/sites/:siteId/backups/:backupId/export` turns that record into the standard downloadable Studio artifact.
@@ -473,6 +476,15 @@ For WP Remote, that means:
   - `backupsRead: true`
   - `pull: false`
 
+### Compatibility finding - 2026-04-01
+
+The real Avenue941 Flywheel fixture has now shown two different truths:
+
+- on a **patched** WP Remote plugin, bridge-side DB export, FS inventory, and active file download work,
+- on an **unpatched** Flywheel WP Remote plugin, filesystem export cannot be treated as reliable due an upstream FS-wing bug.
+
+This means Phase 6 should complete WP Remote export for **compatible hosts**, but it must not treat unpatched Flywheel WP Remote as generally supported.
+
 ### Expected bridge changes
 
 - add a rollout flag such as `WPREMOTE_EXPORT_ENABLED`,
@@ -482,62 +494,78 @@ For WP Remote, that means:
 - add an SQL dump serializer built from WP Remote DB wing responses,
 - replace the discovery-only unsupported WP Remote executor with real backup/export behavior,
 - adjust the export route guard in `src/app.ts` so it no longer requires `site.capabilities.pull`,
+- add a runtime compatibility canary so DB-valid / FS-invalid sites stay discovery-only,
 - keep import/restore unsupported.
 
 ### Validation milestones
 
-1. real Avenue941 backup job writes a staged snapshot and manifest,
+1. a real Avenue941 backup job writes a staged snapshot and manifest,
 2. backup inventory is visible from the bridge,
 3. export job creates a downloadable artifact,
 4. artifact extracts into the expected `sql/`, `wp-content/`, and `meta.json` layout,
-5. Studio can manually import that artifact through the existing import path.
+5. Studio can manually import that artifact through the existing import path,
+6. incompatible runtimes are kept discovery-only before pull activation.
 
 ### Out of scope
 
-- enabling Studio WP Remote pull,
+- universal WP Remote support on unpatched Flywheel runtimes,
+- enabling Studio WP Remote pull before compatibility gating exists,
 - WP Remote import support,
 - WP Remote restore support,
 - Flywheel/WP Engine account integration.
 
-## Phase 7 - WP Remote Studio pull activation
+## Phase 7 - WP Remote compatibility gating and Studio pull activation
 
 ### Objective
 
-Enable WP Remote pull in Studio only after the bridge export artifact has been validated against the existing import pipeline.
+Enable WP Remote pull in Studio only after the bridge export artifact has been validated and the site passes runtime compatibility checks.
 
 ### Expected changes
 
-- relax the current WP Remote runtime guards in Studio,
-- update WP Remote site capability mapping so validated export-capable sites become pullable,
-- validate end-to-end add-site pull/import behavior.
+- add bridge-side compatibility signals for validated WP Remote sites,
+- relax the current WP Remote runtime guards in Studio only for compatibility-validated sites,
+- keep export-capable-but-incompatible runtimes discovery-only,
+- validate end-to-end add-site pull/import behavior on a compatible fixture.
 
 ### Exit criteria
 
-- a user can select a WP Remote site in Studio and complete a local pull/import flow,
+- a user can select a compatibility-validated WP Remote site in Studio and complete a local pull/import flow,
 - the generated artifact is proven compatible with Studio import,
-- provider-specific failures remain normalized and actionable.
+- incompatible WP Remote runtimes remain non-pullable with actionable errors.
 
-## Phase 8 - Flywheel and WP Engine discovery
+## Phase 8 - Flywheel native support
 
 ### Objective
 
-Confirm whether Flywheel and WP Engine can support a reliable Studio workflow.
+Deliver a Flywheel-native path that works whether or not WP Remote is installed, and prefer it for Flywheel-hosted sites when both providers can see the same site.
 
-### Research inputs
+### Research and implementation inputs
 
-- their user-facing products,
 - Local app behavior under Connected accounts,
-- any available auth/site-list/export mechanisms,
-- hands-on testing against available environments.
+- any available Flywheel auth, site-list, and export mechanisms,
+- hands-on testing against approved Flywheel environments,
+- host-aware duplicate-site and provider-preference policy.
 
 ### Exit criteria
 
-Each provider must end in one of two states:
+- Flywheel ends with a concrete native contract and implementation path,
+- Studio can prefer Flywheel-native over WP Remote for Flywheel-hosted sites,
+- Flywheel-hosted sites no longer depend on patched WP Remote behavior to be actionable.
+
+## Phase 9 - WP Engine discovery and support decision
+
+### Objective
+
+Confirm whether WP Engine can support a reliable Studio workflow after the Flywheel-native track is defined.
+
+### Exit criteria
+
+WP Engine ends in one of two states:
 
 - approved for implementation with a concrete contract, or
 - explicitly deferred with rationale.
 
-## Phase 9 - Hardening and rollout support
+## Phase 10 - Hardening and rollout support
 
 ### Objective
 

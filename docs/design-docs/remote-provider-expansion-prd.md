@@ -5,7 +5,7 @@
 This product requirements document defines the next phase of remote-hosting integrations for our WordPress Studio fork.
 
 - **Status:** In progress
-- **Last updated:** 2026-03-31
+- **Last updated:** 2026-04-01
 - **Primary repo:** `studio`
 - **Related repos:** `studio-hetzner-bridge`, `platform-infra`, `wpremote`, `mainwp`, `mainwp-hetzner-backup`
 
@@ -45,6 +45,17 @@ What is not yet proven:
 The next implementation phase is therefore **bridge-first WP Remote export support**, not additional discovery work.
 
 The detailed execution plan for that phase lives in `studio-hetzner-bridge/docs/wpremote-export-support-plan.md`.
+
+## Compatibility finding - 2026-04-01
+
+The real Flywheel-hosted Avenue941 fixture changes the roadmap in an important way:
+
+- WP Remote export is now proven far enough to reach DB completion, full filesystem inventory, and active file download on a **patched** Flywheel test site.
+- Unpatched Flywheel WP Remote cannot be treated as generally supported because the failure sits in the remote plugin filesystem wing, not in Studio.
+- Product implication:
+  - **WP Remote** remains the primary provider for compatible hosts.
+  - **Flywheel-native support** becomes a separate required track, not just a later nice-to-have.
+  - When both providers can see the same Flywheel-hosted site, Studio should eventually prefer the **Flywheel-native** path.
 
 ## Context
 
@@ -198,7 +209,20 @@ The intended end state is that Flywheel and WP Engine users can:
 - select a site,
 - pull it into Studio.
 
-Because we do not yet have a confirmed contract from the local evidence available in this planning pass, this requirement is gated by discovery and may need a staged rollout.
+Because current evidence now splits the provider paths, the rollout posture is:
+
+- **Flywheel** has a required native-support track because unpatched Flywheel WP Remote filesystem export is not reliable.
+- **WP Engine** remains discovery-gated until a concrete contract is proven.
+
+### Provider overlap and preference
+
+Studio should support a host-aware preference policy when the same site can appear through multiple providers.
+
+Requirements:
+
+- For Flywheel-hosted sites, prefer **Flywheel-native** over **WP Remote** when both are available.
+- Keep WP Remote as the preferred top-level provider for compatible non-WP.com hosts.
+- Keep unsupported WP Remote runtimes discovery-only with a concrete reason instead of exposing a broken pull path.
 
 ## UX requirements
 
@@ -251,14 +275,16 @@ The implementation should primarily work through these existing seams:
 ## Risks
 
 - WP Remote may require bridge-side capabilities that are not yet implemented.
-- Flywheel and WP Engine may not expose practical auth or export contracts for this workflow.
+- Flywheel native support may require a different contract than WP Remote and cannot depend on patched remote plugins.
+- WP Engine may not expose practical auth or export contracts for this workflow.
 - Generalizing the current bridge inventory model could regress current MainWP integrations if done carelessly.
 - New provider IDs could create backward-compatibility issues if rollout is not staged.
 
 ## Open questions
 
 - Which exact callback envelope and signing bootstrap details must be proven against a real WP Remote-managed site before Phase 5 starts?
-- Can Flywheel and WP Engine provide account login, site inventory, and export in a way Studio can support reliably?
+- Can Flywheel provide a native account, site inventory, and export contract reliable enough to become the preferred path for Flywheel-hosted sites?
+- Can WP Engine provide account login, site inventory, and export in a way Studio can support reliably?
 - Should discovery-only providers be visible by default or feature-flagged until their contracts are proven?
 - When should the bridge be renamed from `studio-hetzner-bridge` to a provider-neutral identity?
 

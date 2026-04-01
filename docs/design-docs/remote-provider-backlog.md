@@ -8,7 +8,7 @@ This backlog tracks the work required to ship the remote-provider expansion road
 - `remote-provider-architecture-and-phases.md`
 
 - **Status:** In progress
-- **Last updated:** 2026-03-31
+- **Last updated:** 2026-04-01
 
 ## Tracking conventions
 
@@ -25,7 +25,8 @@ This backlog tracks the work required to ship the remote-provider expansion road
 - Provider-aware bridge contract generalization is complete.
 - WP Remote bootstrap/discovery is now manually validated on a real Flywheel-hosted Avenue941 test site.
 - WP Remote remains intentionally discovery-only in Studio.
-- The next implementation phase is bridge-side WP Remote export support.
+- Bridge-side WP Remote export is implemented in code and under live verification.
+- Flywheel now has a separate native-support track because unpatched Flywheel WP Remote filesystem export is not reliable.
 
 ## Phase 1 - Studio provider model and chooser updates
 
@@ -228,7 +229,7 @@ Ship the first real WP Remote runtime slice:
 
 ### Goal
 
-Implement real bridge-side WP Remote backup/export support while keeping Studio pull disabled until artifact correctness is proven.
+Implement real bridge-side WP Remote backup/export support for **compatible hosts** while keeping Studio pull disabled until artifact correctness and runtime compatibility are both proven.
 
 ### Exit criteria
 
@@ -238,71 +239,136 @@ Detailed bridge implementation notes for this phase live in `studio-hetzner-brid
 - Backup inventory is visible for validated WP Remote sites.
 - The bridge can export a downloadable Studio-compatible artifact.
 - Studio can manually import that artifact through the existing import path.
+- Known-incompatible runtimes can be kept discovery-only before Studio pull is enabled.
 
 ### Tasks
 
-- [ ] **P6-1 | studio-hetzner-bridge | Add WP Remote export rollout/config gates**
-  - Add `WPREMOTE_EXPORT_ENABLED` or equivalent.
-  - Project `backupCreate: true` / `backupsRead: true` while keeping `pull: false`.
-  - Relax the export route guard so it does not depend on `site.capabilities.pull`.
+- [x] **P6-1 | studio-hetzner-bridge | Add WP Remote export rollout/config gates**
+  - Added `WPREMOTE_EXPORT_ENABLED`.
+  - Projects `backupCreate: true` / `backupsRead: true` while keeping `pull: false`.
+  - Export route no longer depends on `site.capabilities.pull`.
 
-- [ ] **P6-2 | studio-hetzner-bridge | Extend WP Remote transport with streamed response support**
-  - Parse framed stream responses.
-  - Validate checksums.
-  - Preserve the final terminal envelope.
+- [x] **P6-2 | studio-hetzner-bridge | Extend WP Remote transport with streamed response support**
+  - Parses framed stream responses.
+  - Validates checksums.
+  - Preserves the final terminal envelope.
 
-- [ ] **P6-3 | studio-hetzner-bridge | Add staged snapshot assembly for WP Remote backup jobs**
-  - Build `database.sql` from DB wing responses.
-  - Reconstruct `wp-content` locally from FS wing responses.
-  - Write snapshot metadata under the backup directory.
+- [x] **P6-3 | studio-hetzner-bridge | Add staged snapshot assembly for WP Remote backup jobs**
+  - Builds `database.sql` from DB wing responses.
+  - Reconstructs `wp-content` locally from FS wing responses.
+  - Writes snapshot metadata under the backup directory.
 
-- [ ] **P6-4 | studio-hetzner-bridge | Replace the WP Remote unsupported executor with real backup/export execution**
-  - `runBackup()` should create the staged snapshot and manifest metadata.
-  - `runExport()` should package the staged snapshot into the standard Studio artifact.
-  - Keep `runImport()` and `runRestore()` unsupported.
+- [x] **P6-4 | studio-hetzner-bridge | Replace the WP Remote unsupported executor with real backup/export execution**
+  - `runBackup()` creates the staged snapshot and manifest metadata.
+  - `runExport()` packages the staged snapshot into the standard Studio artifact.
+  - `runImport()` and `runRestore()` remain unsupported.
 
-- [ ] **P6-5 | studio-hetzner-bridge | Add bridge tests for WP Remote backup/export**
-  - Cover transport stream parsing.
-  - Cover staged snapshot creation and cleanup.
-  - Cover export artifact creation.
-  - Cover route/capability behavior with `pull: false`.
+- [x] **P6-5 | studio-hetzner-bridge | Add bridge tests for WP Remote backup/export**
+  - Covers transport stream parsing.
+  - Covers staged snapshot creation and cleanup.
+  - Covers export artifact creation.
+  - Covers route/capability behavior with `pull: false`.
 
-- [ ] **P6-6 | validation | Run real-site WP Remote export verification**
-  - Create a backup against the Avenue941 WP Remote fixture.
-  - Confirm backup inventory visibility.
-  - Confirm artifact download and extraction layout.
-  - Confirm manual Studio import of the produced artifact.
+- [-] **P6-6 | validation | Run real-site WP Remote export verification**
+  - Live reruns against the patched Avenue941 fixture now reach:
+    - DB completion,
+    - full FS inventory,
+    - active file download and local snapshot growth.
+  - Remaining gates:
+    - backup completion,
+    - backup inventory visibility,
+    - export artifact generation,
+    - manual Studio import.
 
-## Phase 7 - Flywheel and WP Engine discovery
+- [ ] **P6-7 | studio-hetzner-bridge | Add WP Remote runtime compatibility canary and capability downgrade**
+  - Detect sites where WP Remote validation succeeds but filesystem export does not.
+  - Keep those sites discovery-only with a concrete unsupported reason.
+  - Do not advertise backup/export for known-incompatible runtimes such as unpatched Flywheel WP Remote.
+
+## Phase 7 - WP Remote pull activation for compatible hosts
 
 ### Goal
 
-Determine whether Flywheel and WP Engine can support the same Studio workflow reliably.
+Enable WP Remote pull in Studio only for sites that pass both export verification and runtime compatibility checks.
 
 ### Exit criteria
 
-Each provider ends with either an approved implementation contract or a documented deferral decision.
+- A compatibility-validated WP Remote site becomes pullable in Studio.
+- The produced artifact is proven importable through the existing Studio pipeline.
+- Unsupported WP Remote runtimes remain discovery-only with actionable messaging.
 
 ### Tasks
 
-- [ ] **P7-1 | research | Inspect Local app artifacts in `Contents` for connected-account clues**
+- [ ] **P7-1 | studio-hetzner-bridge | Project pull capability only for compatibility-validated WP Remote sites**
+  - Keep export-capable-but-incompatible sites non-pullable.
+
+- [ ] **P7-2 | studio | Relax the current WP Remote guard for validated sites only**
+  - Preserve discovery-only behavior for incompatible runtimes.
+
+- [ ] **P7-3 | validation | Confirm end-to-end Studio pull/import on a compatible WP Remote fixture**
+  - Select site in Studio.
+  - Complete pull.
+  - Confirm local site boots.
+
+## Phase 8 - Flywheel native support
+
+### Goal
+
+Deliver a Flywheel-native path that works whether or not WP Remote is installed, and prefer it for Flywheel-hosted sites when both providers can see the same site.
+
+### Exit criteria
+
+- Flywheel auth/account connection is defined.
+- Flywheel site inventory is available in Studio.
+- A Flywheel-hosted site can be exported/pulled through a native Flywheel path.
+- Studio has a provider-preference rule for Flywheel-vs-WP Remote overlap.
+
+### Tasks
+
+- [ ] **P8-1 | research | Inspect Local app artifacts in `Contents` for Flywheel connected-account clues**
   - Focus on user-facing account states and likely product expectations.
   - Treat this as directional, not as a substitute for real API discovery.
 
-- [ ] **P7-2 | research | Investigate Flywheel auth, site inventory, and export options**
+- [ ] **P8-2 | research | Investigate Flywheel auth, site inventory, and export options**
   - Use the available Flywheel environment and approved access paths.
-  - Record whether a bridge-backed implementation is viable.
+  - Record whether a native bridge-backed implementation is viable.
 
-- [ ] **P7-3 | research | Investigate WP Engine auth, site inventory, and export options**
+- [ ] **P8-3 | planning | Define host-aware provider preference and duplicate-site policy**
+  - Prefer Flywheel-native over WP Remote for Flywheel-hosted sites.
+  - Define how the same canonical site is represented when multiple providers can discover it.
+
+- [ ] **P8-4 | implementation | Build the Flywheel-native bridge/account path if viable**
+  - Add provider-specific account validation and site listing.
+  - Add export/pull orchestration.
+
+- [ ] **P8-5 | studio | Wire Flywheel-native UX and pull flow**
+  - Keep chooser semantics honest.
+  - Route Flywheel-hosted sites through the native provider when applicable.
+
+## Phase 9 - WP Engine discovery and support decision
+
+### Goal
+
+Determine whether WP Engine can support the same Studio workflow reliably and sequence it after Flywheel.
+
+### Exit criteria
+
+WP Engine ends in one of two states:
+
+- approved for implementation with a concrete contract, or
+- explicitly deferred with rationale.
+
+### Tasks
+
+- [ ] **P9-1 | research | Investigate WP Engine auth, site inventory, and export options**
   - Identify likely account/login and site-selection patterns.
   - Record contract feasibility and open questions.
 
-- [ ] **P7-4 | planning | Decide discovery-provider UI policy**
-  - Keep visible as coming soon,
-  - hide behind flags,
-  - or defer completely until real support exists.
+- [ ] **P9-2 | planning | Decide WP Engine implementation priority after Flywheel**
+  - Confirm whether it follows the same bridge model.
+  - Confirm whether Studio UX should mirror Flywheel-native behavior.
 
-## Phase 8 - Hardening and rollout support
+## Phase 10 - Hardening and rollout support
 
 ### Goal
 
@@ -316,22 +382,22 @@ Prepare the app and supporting docs for stable testing, rollout, and ongoing mai
 
 ### Tasks
 
-- [ ] **P8-1 | studio | Normalize provider error codes and user-facing messages**
+- [ ] **P10-1 | studio | Normalize provider error codes and user-facing messages**
   - Ensure similar failures render consistently across MainWP and WP Remote.
 
-- [ ] **P8-2 | studio | Add provider rollout flags if needed**
+- [ ] **P10-2 | studio | Add provider rollout flags if needed**
   - Use flags for newly shipped providers, not for already-stable MainWP behavior.
 
-- [ ] **P8-3 | studio-hetzner-bridge | Add provider-tagged audit and telemetry fields**
+- [ ] **P10-3 | studio-hetzner-bridge | Add provider-tagged audit and telemetry fields**
   - Improve debugging for multi-provider behavior.
 
-- [ ] **P8-4 | validation | Run required repo verification on implementation branches**
+- [ ] **P10-4 | validation | Run required repo verification on implementation branches**
   - `npx eslint --fix <modified files>`
   - `npm run typecheck`
   - `npm test -- <relevant test path>`
   - `npm start`
 
-- [ ] **P8-5 | docs | Update cross-repo runbooks as implementation lands**
+- [ ] **P10-5 | docs | Update cross-repo runbooks as implementation lands**
   - `studio`
   - `studio-hetzner-bridge`
   - `platform-infra`
@@ -343,12 +409,14 @@ Prepare the app and supporting docs for stable testing, rollout, and ongoing mai
 - “WP Remove” means **WP Remote**.
 - `mainwpBridge` stays as the stored provider identity for compatibility.
 - The existing bridge remains the single provider-bridge surface.
-- Flywheel and WP Engine are discovery-gated until a real contract is confirmed.
+- WP Remote is the preferred provider for compatible non-WP.com hosts.
+- Flywheel requires a native support track regardless of WP Remote because unpatched Flywheel WP Remote filesystem export is not reliable.
+- WP Engine remains discovery-gated until a real contract is confirmed.
 - Packaging and Cloudflare R2 release-artifact work are follow-on operational concerns, not core provider-expansion scope.
 
 ### To record as work progresses
 
-- Decision date for WP Remote go/no-go:
-- Decision date for Flywheel implementation viability:
+- Decision date for WP Remote compatible-host rollout:
+- Decision date for Flywheel native implementation viability:
 - Decision date for WP Engine implementation viability:
 - Decision date for bridge renaming, if ever approved:
