@@ -3,11 +3,19 @@ import { platformTestSuite } from '@studio/common/lib/tests/utils/platform-test-
 import { lstat, move, Stats } from 'fs-extra';
 import { vi } from 'vitest';
 import { JetpackImporter, SQLImporter } from 'src/lib/import-export/import/importers';
+import { batchJetpackExtendedInsertsInPlace } from 'src/lib/import-export/import/importers/jetpack-sql-insert-batching';
+import { rewriteSqlFileInPlace } from 'src/lib/import-export/import/importers/sql-file-transform';
 import { BackupContents } from 'src/lib/import-export/import/types';
 import { SiteServer } from 'src/site-server';
 
 vi.mock( 'fs' );
 vi.mock( 'src/site-server' );
+vi.mock( 'src/lib/import-export/import/importers/jetpack-sql-insert-batching', () => ( {
+	batchJetpackExtendedInsertsInPlace: vi.fn().mockResolvedValue( undefined ),
+} ) );
+vi.mock( 'src/lib/import-export/import/importers/sql-file-transform', () => ( {
+	rewriteSqlFileInPlace: vi.fn().mockResolvedValue( undefined ),
+} ) );
 vi.mock( 'fs-extra', () => ( {
 	lstat: vi.fn(),
 	move: vi.fn(),
@@ -33,9 +41,25 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 
 	const mockStudioSitePath = normalize( '/path/to/studio/site' );
 	const mockStudioSiteId = '123';
+	const firstSqlTempPath = '/wordpress/studio-backup-sql-1-2024-08-01-12-00-00.sql';
+	const secondSqlTempPath = '/wordpress/studio-backup-sql-2-2024-08-01-12-00-00.sql';
+	const firstLegacyCommand =
+		`sqlite import ${ firstSqlTempPath } --require=/tmp/sqlite-command/command.php`;
+	const secondLegacyCommand =
+		`sqlite import ${ secondSqlTempPath } --require=/tmp/sqlite-command/command.php`;
+	const firstAstCommand = `${ firstLegacyCommand } --enable-ast-driver`;
+	const secondAstCommand = `${ secondLegacyCommand } --enable-ast-driver`;
 
 	beforeEach( () => {
 		vi.clearAllMocks();
+
+		const executeWpCliCommand = vi.fn().mockImplementation( ( command: string ) =>
+			Promise.resolve(
+				command === 'option get siteurl'
+					? { stdout: 'http://localhost:8881', stderr: '', exitCode: 0 }
+					: { stdout: '', stderr: '', exitCode: 0 }
+			)
+		);
 
 		vi.mocked( SiteServer.get, { partial: true } ).mockReturnValue( {
 			details: {
@@ -46,18 +70,9 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 				phpVersion: '8.0',
 				running: false,
 			},
-			executeWpCliCommand: vi
-				.fn()
-				.mockImplementation( ( command: string ) =>
-					Promise.resolve(
-						command === 'option get siteurl'
-							? { stdout: 'http://localhost:8881', stderr: '', exitCode: 0 }
-							: { stdout: '', stderr: '', exitCode: 0 }
-					)
-				),
+			executeWpCliCommand,
 		} );
 
-		// mock move
 		vi.mocked( move ).mockResolvedValue();
 
 		vi.useFakeTimers();
@@ -70,8 +85,6 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 				} ) as Stats
 		);
 	} );
-
-	afterEach( () => {} );
 
 	describe( 'import', () => {
 		it( 'should copy wp-config, wp-content files and read meta file', async () => {
@@ -88,41 +101,181 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 			await importer.import( mockStudioSitePath, mockStudioSiteId );
 
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
-			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 5 ); // One for each wp-content file + wp-config.php
+			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 7 ); // wp-config + wp-content + staged SQL copies
+			expect( batchJetpackExtendedInsertsInPlace ).toHaveBeenCalledTimes( 2 );
 			expect( fs.promises.readFile ).toHaveBeenCalledWith(
 				normalize( '/tmp/extracted/meta.json' ),
 				'utf-8'
 			);
 		} );
 
-		it( 'should handle sql files and call wp sqlite import cli command', async () => {
+		it( 'should keep raw SQL imports AST-first', async () => {
 			const importer = new SQLImporter( mockBackupContents );
 			await importer.import( mockStudioSitePath, mockStudioSiteId );
 
-			const siteServer = SiteServer.get( mockStudioSiteId );
+			expect( batchJetpackExtendedInsertsInPlace ).not.toHaveBeenCalled();
 
-			const expectedCommand =
-				'sqlite import /wordpress/studio-backup-sql-2024-08-01-12-00-00.sql --require=/tmp/sqlite-command/command.php --enable-ast-driver';
-			expect( siteServer?.executeWpCliCommand ).toHaveBeenNthCalledWith( 1, expectedCommand, {
+			const siteServer = SiteServer.get( mockStudioSiteId ) as unknown as {
+				executeWpCliCommand: ReturnType< typeof vi.fn >;
+			};
+
+			expect( rewriteSqlFileInPlace ).toHaveBeenCalledTimes( 2 );
+			expect( siteServer.executeWpCliCommand ).toHaveBeenNthCalledWith( 1, firstAstCommand, {
 				targetPhpVersion: '8.3',
+				phpMemoryLimit: '2048M',
 				skipPluginsAndThemes: true,
 			} );
-			expect( siteServer?.executeWpCliCommand ).toHaveBeenNthCalledWith( 2, expectedCommand, {
+			expect( siteServer.executeWpCliCommand ).toHaveBeenNthCalledWith( 2, secondAstCommand, {
 				targetPhpVersion: '8.3',
+				phpMemoryLimit: '2048M',
 				skipPluginsAndThemes: true,
 			} );
 
-			const expectedUnlinkPath = normalize(
-				'/path/to/studio/site/studio-backup-sql-2024-08-01-12-00-00.sql'
+			expect( fs.promises.rm ).toHaveBeenNthCalledWith(
+				1,
+				normalize( '/path/to/studio/site/studio-backup-sql-1-2024-08-01-12-00-00.sql' ),
+				{ force: true, recursive: true }
 			);
-			expect( fs.promises.rm ).toHaveBeenNthCalledWith( 1, expectedUnlinkPath, {
-				force: true,
-				recursive: true,
+			expect( fs.promises.rm ).toHaveBeenNthCalledWith(
+				2,
+				normalize( '/path/to/studio/site/studio-backup-sql-2-2024-08-01-12-00-00.sql' ),
+				{ force: true, recursive: true }
+			);
+		} );
+
+		it( 'should clean up staged SQL files when staging fails before import begins', async () => {
+			vi.mocked( rewriteSqlFileInPlace )
+				.mockResolvedValueOnce( undefined )
+				.mockRejectedValueOnce( new Error( 'boom' ) );
+
+			const importer = new SQLImporter( mockBackupContents );
+			const siteServer = SiteServer.get( mockStudioSiteId ) as unknown as {
+				executeWpCliCommand: ReturnType< typeof vi.fn >;
+			};
+
+			await expect( importer.import( mockStudioSitePath, mockStudioSiteId ) ).rejects.toThrow(
+				'boom'
+			);
+			expect( siteServer.executeWpCliCommand ).not.toHaveBeenCalled();
+			expect( fs.promises.rm ).toHaveBeenNthCalledWith(
+				1,
+				normalize( '/path/to/studio/site/studio-backup-sql-1-2024-08-01-12-00-00.sql' ),
+				{ force: true, recursive: true }
+			);
+			expect( fs.promises.rm ).toHaveBeenNthCalledWith(
+				2,
+				normalize( '/path/to/studio/site/studio-backup-sql-2-2024-08-01-12-00-00.sql' ),
+				{ force: true, recursive: true }
+			);
+		} );
+
+		it( 'should try Jetpack SQL imports in legacy mode before AST fallback', async () => {
+			const siteServer = SiteServer.get( mockStudioSiteId ) as unknown as {
+				executeWpCliCommand: ReturnType< typeof vi.fn >;
+			};
+			siteServer.executeWpCliCommand.mockImplementation( ( command: string ) => {
+				if ( command === 'option get siteurl' ) {
+					return Promise.resolve( { stdout: 'http://localhost:8881', stderr: '', exitCode: 0 } );
+				}
+
+				if ( command === secondLegacyCommand ) {
+					return Promise.resolve( {
+						stdout: '',
+						stderr: 'SQL syntax error near unsupported legacy construct',
+						exitCode: 1,
+					} );
+				}
+
+				return Promise.resolve( { stdout: '', stderr: '', exitCode: 0 } );
 			} );
-			expect( fs.promises.rm ).toHaveBeenNthCalledWith( 2, expectedUnlinkPath, {
-				force: true,
-				recursive: true,
+
+			const importer = new JetpackImporter( mockBackupContents );
+			await importer.import( mockStudioSitePath, mockStudioSiteId );
+
+			expect( siteServer.executeWpCliCommand ).toHaveBeenNthCalledWith( 1, firstLegacyCommand, {
+				targetPhpVersion: '8.3',
+				phpMemoryLimit: '2048M',
+				skipPluginsAndThemes: true,
 			} );
+			expect( siteServer.executeWpCliCommand ).toHaveBeenNthCalledWith( 2, secondLegacyCommand, {
+				targetPhpVersion: '8.3',
+				phpMemoryLimit: '2048M',
+				skipPluginsAndThemes: true,
+			} );
+			expect( siteServer.executeWpCliCommand ).toHaveBeenNthCalledWith( 3, firstAstCommand, {
+				targetPhpVersion: '8.3',
+				phpMemoryLimit: '2048M',
+				skipPluginsAndThemes: true,
+			} );
+			expect( siteServer.executeWpCliCommand ).toHaveBeenNthCalledWith( 4, secondAstCommand, {
+				targetPhpVersion: '8.3',
+				phpMemoryLimit: '2048M',
+				skipPluginsAndThemes: true,
+			} );
+			expect( fs.promises.writeFile ).toHaveBeenCalledTimes( 2 );
+		} );
+
+		it( 'should not retry Jetpack imports with AST when the legacy failure is memory-related', async () => {
+			const siteServer = SiteServer.get( mockStudioSiteId ) as unknown as {
+				executeWpCliCommand: ReturnType< typeof vi.fn >;
+			};
+			siteServer.executeWpCliCommand.mockImplementation( ( command: string ) => {
+				if ( command === firstLegacyCommand ) {
+					return Promise.resolve( {
+						stdout: '',
+						stderr: 'Fatal error: Out of memory (allocated 1078460416 bytes)',
+						exitCode: 1,
+					} );
+				}
+
+				return Promise.resolve( { stdout: '', stderr: '', exitCode: 0 } );
+			} );
+
+			const importer = new JetpackImporter( mockBackupContents );
+
+			await expect( importer.import( mockStudioSitePath, mockStudioSiteId ) ).rejects.toThrow(
+				'Out of memory'
+			);
+			expect( siteServer.executeWpCliCommand ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'should surface both failure modes when Jetpack import fails in legacy and AST mode', async () => {
+			const siteServer = SiteServer.get( mockStudioSiteId ) as unknown as {
+				executeWpCliCommand: ReturnType< typeof vi.fn >;
+			};
+			siteServer.executeWpCliCommand.mockImplementation( ( command: string ) => {
+				if ( command === 'option get siteurl' ) {
+					return Promise.resolve( { stdout: 'http://localhost:8881', stderr: '', exitCode: 0 } );
+				}
+
+				if ( command === secondLegacyCommand ) {
+					return Promise.resolve( {
+						stdout: '',
+						stderr: 'SQL syntax error near unsupported legacy construct',
+						exitCode: 1,
+					} );
+				}
+
+				if ( command === firstAstCommand ) {
+					return Promise.resolve( {
+						stdout: '',
+						stderr: 'AST parser failed while processing import',
+						exitCode: 1,
+					} );
+				}
+
+				return Promise.resolve( { stdout: '', stderr: '', exitCode: 0 } );
+			} );
+
+			const importer = new JetpackImporter( mockBackupContents );
+			const importPromise = importer.import( mockStudioSitePath, mockStudioSiteId );
+
+			await expect( importPromise ).rejects.toThrow(
+				'SQLite import failed in both legacy and AST modes.'
+			);
+			await expect( importPromise ).rejects.toThrow(
+				'Legacy stderr: SQL syntax error near unsupported legacy construct'
+			);
 		} );
 
 		it( 'should handle missing meta file', async () => {
@@ -134,11 +287,8 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 			await importer.import( mockStudioSitePath, mockStudioSiteId );
 
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
-			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 5 ); // One for each wp-content file + wp-config.php
-			// readFile is called for SQL file preparation (MySQL DDL stripping) but not for meta file
-			for ( const call of vi.mocked( fs.promises.readFile ).mock.calls ) {
-				expect( call[ 0 ] ).not.toContain( 'meta' );
-			}
+			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 7 );
+			expect( fs.promises.readFile ).not.toHaveBeenCalled();
 		} );
 
 		it( 'should handle JSON parse error in meta file', async () => {
@@ -152,7 +302,7 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 			).resolves.not.toThrow();
 
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
-			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 5 ); // One for each wp-content file + wp-config.php
+			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 7 );
 			expect( fs.promises.readFile ).toHaveBeenCalledWith(
 				normalize( '/tmp/extracted/meta.json' ),
 				'utf-8'
@@ -166,7 +316,6 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 
 			await importer.import( mockStudioSitePath, mockStudioSiteId );
 
-			// Verify font file was copied
 			expect( fs.promises.copyFile ).toHaveBeenCalledWith(
 				normalize( '/tmp/extracted/wp-content/fonts/open-sans.woff2' ),
 				normalize( '/path/to/studio/site/wp-content/fonts/open-sans.woff2' )
@@ -186,29 +335,23 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 
 			await importer.import( mockStudioSitePath, mockStudioSiteId );
 
-			// Should still create other directories and copy other files
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
-			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 4 ); // One for each wp-content file + wp-config.php - fonts
+			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 6 );
 		} );
 
 		it( 'should categorize WordPress content files correctly', () => {
 			const testFiles = [
-				// Plugin files
 				normalize( '/tmp/extracted/wp-content/plugins/akismet/akismet.php' ),
 				normalize( '/tmp/extracted/wp-content/plugins/jetpack/jetpack.php' ),
 				normalize( '/tmp/extracted/wp-content/plugins/woocommerce/woocommerce.php' ),
-				// Theme files
 				normalize( '/tmp/extracted/wp-content/themes/twentytwentyone/style.css' ),
 				normalize( '/tmp/extracted/wp-content/themes/twentytwentythree/index.php' ),
-				// Upload files
 				normalize( '/tmp/extracted/wp-content/uploads/2023/01/image.jpg' ),
 				normalize( '/tmp/extracted/wp-content/uploads/2024/02/document.pdf' ),
 				normalize( '/tmp/extracted/wp-content/uploads/2024/03/video.mp4' ),
-				// Other files
 				normalize( '/tmp/extracted/wp-content/index.php' ),
 				normalize( '/tmp/extracted/wp-content/fonts/open-sans.woff2' ),
 				normalize( '/tmp/extracted/wp-content/mu-plugins/custom.php' ),
-				// Windows path style testing
 				'C:\\tmp\\extracted\\wp-content\\plugins\\hello-world\\hello.php',
 				'C:\\tmp\\extracted\\wp-content\\themes\\custom\\functions.php',
 				'C:\\tmp\\extracted\\wp-content\\uploads\\2024\\image.png',
@@ -216,7 +359,6 @@ platformTestSuite( 'JetpackImporter', ( { normalize } ) => {
 			];
 
 			const importer = new JetpackImporter( mockBackupContents );
-			// Access the protected method for testing
 			const categorizedFiles = (
 				importer as unknown as {
 					categorizeWpContentFiles: ( files: string[] ) => Record< string, string[] >;

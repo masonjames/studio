@@ -381,6 +381,40 @@ describe( 'useImportExport hook', () => {
 		} );
 	} );
 
+	it( 'shows a timeout-specific import error message for the current WP-CLI timeout text', async () => {
+		mockImportSite.mockRejectedValue( new Error( 'WP-CLI command timed out after 21600000ms' ) );
+
+		const { result } = renderHook( () => useImportExport(), { wrapper } );
+		const file = { path: 'backup.zip', type: 'application/zip' };
+		await act( () => result.current.importFile( file, selectedSite ) );
+
+		expect( result.current.exportState ).toEqual( {} );
+		expect( getIpcApi().showErrorMessageBox ).toHaveBeenCalledWith( {
+			title: 'Failed importing site',
+			message:
+				'The import process timed out after 6 hours, which can occur when processing very large imports. If the issue persists, please contact support.',
+		} );
+	} );
+
+	it( 'shows a memory-specific import error message for database memory exhaustion', async () => {
+		mockImportSite.mockRejectedValue(
+			new Error( 'Allowed memory size of 536870912 bytes exhausted in sqlite parser' )
+		);
+
+		const { result } = renderHook( () => useImportExport(), { wrapper } );
+		const file = { path: 'backup.zip', type: 'application/zip' };
+		await act( () => result.current.importFile( file, selectedSite ) );
+
+		expect( result.current.exportState ).toEqual( {} );
+		expect( getIpcApi().showErrorMessageBox ).toHaveBeenCalledWith( {
+			title: 'Failed importing site',
+			message:
+				'The import failed because Studio ran out of memory while importing the database. This can happen with very large backups. If the issue persists, please contact support.',
+			error: new Error( 'Allowed memory size of 536870912 bytes exhausted in sqlite parser' ),
+			showOpenLogs: true,
+		} );
+	} );
+
 	it( 'does not import if another import is running', async () => {
 		let onEvent: ( ...args: any[] ) => void = vi.fn();
 		vi.mocked( useIpcListener ).mockImplementation( ( event, callback ) => {

@@ -301,9 +301,11 @@ export class SiteServer {
 		args: string | string[],
 		{
 			targetPhpVersion,
+			phpMemoryLimit,
 			skipPluginsAndThemes = false,
 		}: {
 			targetPhpVersion?: string;
+			phpMemoryLimit?: string;
 			skipPluginsAndThemes?: boolean;
 		} = {}
 	): Promise< WpCliResult > {
@@ -332,6 +334,10 @@ export class SiteServer {
 
 		if ( targetPhpVersion ) {
 			cliArgs.push( '--php-version', targetPhpVersion );
+		}
+
+		if ( phpMemoryLimit ) {
+			cliArgs.push( '--studio-php-memory-limit', phpMemoryLimit );
 		}
 
 		cliArgs.push( ...wpCliArgs );

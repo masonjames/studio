@@ -38,6 +38,7 @@ function createNoopSpawnHandler() {
 
 export interface RunWpCliCommandOptions {
 	siteUrl?: string;
+	phpMemoryLimit?: string;
 }
 
 // Run a WP-CLI command in a PHP-WASM instance. This function can be used even if the targeted
@@ -46,7 +47,8 @@ export interface RunWpCliCommandOptions {
 export async function runWpCliCommand(
 	siteFolder: string,
 	phpVersion: SupportedPHPVersion,
-	args: string[]
+	args: string[],
+	options: RunWpCliCommandOptions = {}
 ): Promise< [ StreamedPHPResponse, exitPhp: () => void ] > {
 	const id = await loadNodeRuntime( phpVersion, {
 		followSymlinks: true,
@@ -69,7 +71,7 @@ export async function runWpCliCommand(
 		await setPhpIniEntries( php, {
 			'openssl.cafile': '/tmp/ca-bundle.crt',
 			allow_url_fopen: 1,
-			memory_limit: '512M',
+			memory_limit: options.phpMemoryLimit ?? '512M',
 		} );
 
 		await php.setSpawnHandler( createNoopSpawnHandler() );

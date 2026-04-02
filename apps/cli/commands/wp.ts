@@ -44,9 +44,8 @@ export async function runCommand(
 	mode: Mode,
 	siteFolder: string,
 	args: string[],
-	options: { phpVersion?: string } = {}
+	options: { phpVersion?: string; phpMemoryLimit?: string } = {}
 ): Promise< void > {
-	// Handle global WP-CLI commands that don't require a site path (--studio-no-path)
 	if ( mode === Mode.GLOBAL ) {
 		const [ response, exitPhp ] = await runGlobalWpCliCommand( args );
 
@@ -60,11 +59,10 @@ export async function runCommand(
 	const site = await getSiteByFolder( siteFolder );
 	const phpVersion = validatePhpVersion( options.phpVersion ?? site.phpVersion );
 
-	// If there's already a running Playground instance for this site AND we're not requesting
-	// a different PHP version, pass the command to it…
 	const useCustomPhpVersion = options.phpVersion && options.phpVersion !== site.phpVersion;
+	const useCustomPhpMemoryLimit = !! options.phpMemoryLimit;
 
-	if ( ! useCustomPhpVersion ) {
+	if ( ! useCustomPhpVersion && ! useCustomPhpMemoryLimit ) {
 		process.on( 'SIGINT', disconnectFromDaemon );
 		process.on( 'SIGTERM', disconnectFromDaemon );
 
@@ -85,8 +83,9 @@ export async function runCommand(
 	process.on( 'SIGINT', () => process.exit( 1 ) );
 	process.on( 'SIGTERM', () => process.exit( 1 ) );
 
-	// …If not, run the command in a new PHP-WASM instance
-	const [ response, exitPhp ] = await runWpCliCommand( siteFolder, phpVersion, args );
+	const [ response, exitPhp ] = await runWpCliCommand( siteFolder, phpVersion, args, {
+		phpMemoryLimit: options.phpMemoryLimit,
+	} );
 
 	await pipePHPResponse( response );
 	process.exitCode = await response.exitCode;
@@ -102,7 +101,6 @@ function removeArgumentFromArgv(
 
 	while ( argv.indexOf( `--${ argName }` ) !== -1 ) {
 		const argIndex = argv.indexOf( `--${ argName }` );
-		// Remove 2 elements for --arg value, or 1 element for boolean flags like --no-path
 		argv.splice( argIndex, hasValue ? 2 : 1 );
 	}
 
@@ -116,6 +114,7 @@ function removeArgumentFromArgv(
 
 interface WpCommandOptions extends GlobalOptions {
 	studioNoPath?: boolean;
+	studioPhpMemoryLimit?: string;
 }
 
 export async function commandHandler( argv: ArgumentsCamelCase< WpCommandOptions > ) {
@@ -136,11 +135,17 @@ export async function commandHandler( argv: ArgumentsCamelCase< WpCommandOptions
 			parsedWpCliArgs[ 'php-version' ] !== undefined
 				? String( parsedWpCliArgs[ 'php-version' ] )
 				: undefined;
+		const phpMemoryLimit =
+			parsedWpCliArgs[ 'studio-php-memory-limit' ] !== undefined
+				? String( parsedWpCliArgs[ 'studio-php-memory-limit' ] )
+				: undefined;
 		wpCliArgv = removeArgumentFromArgv( wpCliArgv, 'php-version' );
+		wpCliArgv = removeArgumentFromArgv( wpCliArgv, 'studio-php-memory-limit' );
 		wpCliArgv = removeArgumentFromArgv( wpCliArgv, 'avoid-telemetry', false );
 
 		await runCommand( argv.studioNoPath ? Mode.GLOBAL : Mode.SITE, argv.path, wpCliArgv, {
 			phpVersion,
+			phpMemoryLimit,
 		} );
 	} catch ( error ) {
 		if ( error instanceof LoggerError ) {

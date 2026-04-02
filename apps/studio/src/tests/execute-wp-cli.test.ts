@@ -41,7 +41,11 @@ function simulateCliResponse( {
 describe( 'SiteServer.executeWpCliCommand', () => {
 	let executeWpCliCommand: (
 		args: string,
-		options?: { targetPhpVersion?: string; skipPluginsAndThemes?: boolean }
+		options?: {
+			targetPhpVersion?: string;
+			phpMemoryLimit?: string;
+			skipPluginsAndThemes?: boolean;
+		}
 	) => Promise< { stdout: string; stderr: string; exitCode: number } >;
 
 	beforeEach( () => {
@@ -51,7 +55,7 @@ describe( 'SiteServer.executeWpCliCommand', () => {
 
 		executeWpCliCommand = async (
 			args: string,
-			{ targetPhpVersion, skipPluginsAndThemes = false } = {}
+			{ targetPhpVersion, phpMemoryLimit, skipPluginsAndThemes = false } = {}
 		) => {
 			const projectPath = '/test/site/path';
 			const { parse } = await import( 'shell-quote' );
@@ -72,6 +76,10 @@ describe( 'SiteServer.executeWpCliCommand', () => {
 
 			if ( targetPhpVersion ) {
 				cliArgs.push( '--php-version', targetPhpVersion );
+			}
+
+			if ( phpMemoryLimit ) {
+				cliArgs.push( '--studio-php-memory-limit', phpMemoryLimit );
 			}
 
 			cliArgs.push( ...( wpCliArgs as string[] ) );
@@ -147,6 +155,28 @@ describe( 'SiteServer.executeWpCliCommand', () => {
 
 			expect( mockExecuteCliCommand ).toHaveBeenCalledWith(
 				[ 'wp', '--path', '/test/site/path', 'core', 'version', '--skip-plugins', '--skip-themes' ],
+				{ output: 'capture' }
+			);
+		} );
+
+		it( 'should include the internal PHP memory-limit flag when provided', async () => {
+			const resultPromise = executeWpCliCommand( 'sqlite import /tmp/backup.sql', {
+				phpMemoryLimit: '2048M',
+			} );
+			simulateCliResponse( { exitCode: 0 } );
+			await resultPromise;
+
+			expect( mockExecuteCliCommand ).toHaveBeenCalledWith(
+				[
+					'wp',
+					'--path',
+					'/test/site/path',
+					'--studio-php-memory-limit',
+					'2048M',
+					'sqlite',
+					'import',
+					'/tmp/backup.sql',
+				],
 				{ output: 'capture' }
 			);
 		} );

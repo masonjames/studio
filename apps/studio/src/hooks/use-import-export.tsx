@@ -72,6 +72,29 @@ const WP_CONTENT_TYPE_LABELS: Record< string, string > = {
 	other: __( 'Importing other files…' ),
 };
 
+function getImportErrorMessage( error: unknown ): string {
+	if ( error instanceof Error ) {
+		return error.message;
+	}
+
+	return String( error ?? '' );
+}
+
+function isImportTimeoutError( errorMessage: string ): boolean {
+	return (
+		errorMessage.includes( 'WP-CLI command was canceled (timed out)' ) ||
+		errorMessage.includes( 'WP-CLI command timed out after' )
+	);
+}
+
+function isImportMemoryError( errorMessage: string ): boolean {
+	return (
+		errorMessage.includes( 'Allowed memory size' ) ||
+		errorMessage.includes( 'memory exhausted' ) ||
+		errorMessage.includes( 'Cannot allocate Wasm memory' )
+	);
+}
+
 export const ImportExportProvider = ( { children }: { children: React.ReactNode } ) => {
 	const [ importState, setImportState ] = useState< ImportProgressState >( {} );
 	const [ exportState, setExportState ] = useState< ExportProgressState >( {} );
@@ -100,16 +123,16 @@ export const ImportExportProvider = ( { children }: { children: React.ReactNode 
 			} ) );
 
 			const handleImportError = async ( error: unknown ) => {
-				if ( error instanceof Error && error.message.includes( 'Error: absolute path: /' ) ) {
+				const errorMessage = getImportErrorMessage( error );
+
+				if ( errorMessage.includes( 'Error: absolute path: /' ) ) {
 					getIpcApi().showErrorMessageBox( {
 						title: __( 'Failed importing site' ),
 						message: __(
 							'The ZIP archive is invalid. Try to unpack and pack it again. If this problem persists, please contact support.'
 						),
 					} );
-				} else if (
-					( error as Error ).message.includes( 'WP-CLI command was canceled (timed out)' )
-				) {
+				} else if ( isImportTimeoutError( errorMessage ) ) {
 					getIpcApi().showErrorMessageBox( {
 						title: __( 'Failed importing site' ),
 						message: sprintf(
@@ -118,6 +141,17 @@ export const ImportExportProvider = ( { children }: { children: React.ReactNode 
 							),
 							WP_CLI_IMPORT_EXPORT_RESPONSE_TIMEOUT_IN_HRS
 						),
+					} );
+				} else if ( isImportMemoryError( errorMessage ) ) {
+					const errorToShow = simplifyErrorForDisplay( error );
+
+					getIpcApi().showErrorMessageBox( {
+						title: __( 'Failed importing site' ),
+						message: __(
+							'The import failed because Studio ran out of memory while importing the database. This can happen with very large backups. If the issue persists, please contact support.'
+						),
+						error: errorToShow,
+						showOpenLogs: true,
 					} );
 				} else {
 					const errorToShow = simplifyErrorForDisplay( error );

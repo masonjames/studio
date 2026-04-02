@@ -3,11 +3,19 @@ import { platformTestSuite } from '@studio/common/lib/tests/utils/platform-test-
 import { lstat, move, Stats } from 'fs-extra';
 import { vi } from 'vitest';
 import { LocalImporter } from 'src/lib/import-export/import/importers';
+import { batchJetpackExtendedInsertsInPlace } from 'src/lib/import-export/import/importers/jetpack-sql-insert-batching';
+import { rewriteSqlFileInPlace } from 'src/lib/import-export/import/importers/sql-file-transform';
 import { BackupContents } from 'src/lib/import-export/import/types';
 import { SiteServer } from 'src/site-server';
 
 vi.mock( 'fs' );
 vi.mock( 'src/site-server' );
+vi.mock( 'src/lib/import-export/import/importers/jetpack-sql-insert-batching', () => ( {
+	batchJetpackExtendedInsertsInPlace: vi.fn().mockResolvedValue( undefined ),
+} ) );
+vi.mock( 'src/lib/import-export/import/importers/sql-file-transform', () => ( {
+	rewriteSqlFileInPlace: vi.fn().mockResolvedValue( undefined ),
+} ) );
 vi.mock( 'fs-extra', () => ( {
 	lstat: vi.fn(),
 	move: vi.fn(),
@@ -33,9 +41,21 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 
 	const mockStudioSitePath = normalize( '/path/to/studio/site' );
 	const mockStudioSiteId = '123';
+	const firstAstCommand =
+		'sqlite import /wordpress/studio-backup-sql-1-2024-08-01-12-00-00.sql --require=/tmp/sqlite-command/command.php --enable-ast-driver';
+	const secondAstCommand =
+		'sqlite import /wordpress/studio-backup-sql-2-2024-08-01-12-00-00.sql --require=/tmp/sqlite-command/command.php --enable-ast-driver';
 
 	beforeEach( () => {
 		vi.clearAllMocks();
+
+		const executeWpCliCommand = vi.fn().mockImplementation( ( command: string ) =>
+			Promise.resolve(
+				command === 'option get siteurl'
+					? { stdout: 'http://localhost:8881', stderr: '', exitCode: 0 }
+					: { stdout: '', stderr: '', exitCode: 0 }
+			)
+		);
 
 		vi.mocked( SiteServer.get, { partial: true } ).mockReturnValue( {
 			details: {
@@ -46,18 +66,9 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 				phpVersion: '8.0',
 				running: false,
 			},
-			executeWpCliCommand: vi
-				.fn()
-				.mockImplementation( ( command: string ) =>
-					Promise.resolve(
-						command === 'option get siteurl'
-							? { stdout: 'http://localhost:8881', stderr: '', exitCode: 0 }
-							: { stdout: '', stderr: '', exitCode: 0 }
-					)
-				),
+			executeWpCliCommand,
 		} );
 
-		// mock move
 		vi.mocked( move ).mockResolvedValue();
 
 		vi.useFakeTimers();
@@ -70,8 +81,6 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 				} ) as Stats
 		);
 	} );
-
-	afterEach( () => {} );
 
 	describe( 'import', () => {
 		it( 'should copy wp-content files and read meta file', async () => {
@@ -91,13 +100,35 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 			const result = await importer.import( mockStudioSitePath, mockStudioSiteId );
 
 			expect( result?.meta?.phpVersion ).toBe( '8.2' );
-
+			expect( batchJetpackExtendedInsertsInPlace ).not.toHaveBeenCalled();
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
-			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 5 ); // One for each wp-content file + wp-config.php
+			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 7 );
 			expect( fs.promises.readFile ).toHaveBeenCalledWith(
 				normalize( '/tmp/extracted/local-site.json' ),
 				'utf-8'
 			);
+		} );
+
+		it( 'should keep local SQL imports AST-first', async () => {
+			const importer = new LocalImporter( mockBackupContents );
+			await importer.import( mockStudioSitePath, mockStudioSiteId );
+
+			const siteServer = SiteServer.get( mockStudioSiteId ) as unknown as {
+				executeWpCliCommand: ReturnType< typeof vi.fn >;
+			};
+
+			expect( rewriteSqlFileInPlace ).toHaveBeenCalledTimes( 2 );
+			expect( batchJetpackExtendedInsertsInPlace ).not.toHaveBeenCalled();
+			expect( siteServer.executeWpCliCommand ).toHaveBeenNthCalledWith( 1, firstAstCommand, {
+				targetPhpVersion: '8.3',
+				phpMemoryLimit: '2048M',
+				skipPluginsAndThemes: true,
+			} );
+			expect( siteServer.executeWpCliCommand ).toHaveBeenNthCalledWith( 2, secondAstCommand, {
+				targetPhpVersion: '8.3',
+				phpMemoryLimit: '2048M',
+				skipPluginsAndThemes: true,
+			} );
 		} );
 
 		it( 'should handle missing meta file', async () => {
@@ -109,13 +140,10 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 			const result = await importer.import( mockStudioSitePath, mockStudioSiteId );
 
 			expect( result?.meta?.phpVersion ).toBe( undefined );
-
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
-			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 5 ); // One for each wp-content file + wp-config.php
-			// readFile is called for SQL file preparation (MySQL DDL stripping) but not for meta file
-			for ( const call of vi.mocked( fs.promises.readFile ).mock.calls ) {
-				expect( call[ 0 ] ).not.toContain( 'meta' );
-			}
+			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 7 );
+			expect( fs.promises.readFile ).not.toHaveBeenCalled();
+			expect( rewriteSqlFileInPlace ).toHaveBeenCalled();
 		} );
 
 		it( 'should handle JSON parse error in meta file', async () => {
@@ -129,7 +157,7 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 			).resolves.not.toThrow();
 
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
-			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 5 ); // One for each wp-content file + wp-config.php
+			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 7 );
 			expect( fs.promises.readFile ).toHaveBeenCalledWith(
 				normalize( '/tmp/extracted/local-site.json' ),
 				'utf-8'
@@ -143,7 +171,6 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 
 			await importer.import( mockStudioSitePath, mockStudioSiteId );
 
-			// Verify font file was copied
 			expect( fs.promises.copyFile ).toHaveBeenCalledWith(
 				normalize( '/tmp/extracted/app/public/wp-content/fonts/open-sans.woff2' ),
 				normalize( '/path/to/studio/site/wp-content/fonts/open-sans.woff2' )
@@ -163,9 +190,8 @@ platformTestSuite( 'LocalImporter', ( { normalize } ) => {
 
 			await importer.import( mockStudioSitePath, mockStudioSiteId );
 
-			// Should still create other directories and copy other files
 			expect( fs.promises.mkdir ).toHaveBeenCalled();
-			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 4 ); // One for each wp-content file + wp-config.php - fonts
+			expect( fs.promises.copyFile ).toHaveBeenCalledTimes( 6 );
 		} );
 	} );
 } );

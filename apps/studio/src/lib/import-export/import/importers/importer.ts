@@ -2,14 +2,16 @@ import { shell } from 'electron';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
-import { createInterface } from 'readline';
 import { DEFAULT_PHP_VERSION } from '@studio/common/constants';
 import { SupportedPHPVersionsList } from '@studio/common/types/php-versions';
 import { lstat, move } from 'fs-extra';
 import semver from 'semver';
+import { WP_CLI_SQLITE_IMPORT_MEMORY_LIMIT } from 'src/constants';
 import { getSiteUrl } from 'src/lib/get-site-url';
 import { generateBackupFilename } from 'src/lib/import-export/export/generate-backup-filename';
 import { ImportEvents } from 'src/lib/import-export/import/events';
+import { batchJetpackExtendedInsertsInPlace } from 'src/lib/import-export/import/importers/jetpack-sql-insert-batching';
+import { rewriteSqlFileInPlace } from 'src/lib/import-export/import/importers/sql-file-transform';
 import {
 	BackupContents,
 	MetaFileData,
@@ -26,6 +28,31 @@ export interface ImporterResult extends Omit< BackupContents, 'metaFile' > {
 
 export interface Importer extends Partial< EventEmitter > {
 	import( rootPath: string, siteId: string ): Promise< ImporterResult >;
+}
+
+const MYSQL_DDL_PATTERN =
+	/^\s*(CREATE\s+DATABASE|USE\s+`|DROP\s+DATABASE|ALTER\s+DATABASE|\/\*![\d]+\s|LOCK\s+TABLES|UNLOCK\s+TABLES|SET\s+@@)/i;
+
+type SqliteImportMode = 'legacy' | 'ast';
+type SqliteImportStrategy = 'ast_only' | 'legacy_first_with_ast_fallback';
+
+interface StagedSqlFile {
+	sourcePath: string;
+	tempPath: string;
+	vfsPath: string;
+}
+
+class SqliteImportPassError extends Error {
+	constructor(
+		public readonly mode: SqliteImportMode,
+		public readonly sqlFile: string,
+		public readonly stderr: string,
+		public readonly stdout: string,
+		public readonly exitCode: number
+	) {
+		super( `Database import failed: ${ stderr || stdout || `WP-CLI exited with code ${ exitCode }` }` );
+		this.name = 'SqliteImportPassError';
+	}
 }
 
 abstract class BaseImporter extends EventEmitter implements Importer {
@@ -53,77 +80,212 @@ abstract class BaseImporter extends EventEmitter implements Importer {
 
 		this.emit( ImportEvents.IMPORT_DATABASE_START );
 
-		const sortedSqlFiles = sqlFiles.sort( ( a, b ) => a.localeCompare( b ) );
-		let processedFiles = 0;
-		const totalFiles = sortedSqlFiles.length;
+		const stagedSqlFiles = await this.stageSqlFiles( rootPath, sqlFiles );
 
-		for ( const sqlFile of sortedSqlFiles ) {
-			const sqlTempFile = `${ generateBackupFilename( 'sql' ) }.sql`;
-			const tmpPath = path.join( rootPath, sqlTempFile );
-			processedFiles++;
-
-			this.emit( ImportEvents.IMPORT_DATABASE_PROGRESS, {
-				currentFile: path.basename( sqlFile ),
-				processedFiles,
-				totalFiles,
-			} );
-
-			try {
-				await move( sqlFile, tmpPath );
-				await this.prepareSqlFile( tmpPath );
-				console.log( `Importing ${ sqlFile }` );
-				const { stderr, exitCode, stdout } = await server.executeWpCliCommand(
-					`sqlite import /wordpress/${ sqlTempFile } --require=/tmp/sqlite-command/command.php --enable-ast-driver`,
-					// SQLite plugin requires PHP 8+
-					{
-						targetPhpVersion: DEFAULT_PHP_VERSION,
-						skipPluginsAndThemes: true,
+		try {
+			if ( this.getSqliteImportStrategy() === 'legacy_first_with_ast_fallback' ) {
+				try {
+					await this.importStagedSqlFiles( server, stagedSqlFiles, 'legacy' );
+				} catch ( error ) {
+					if (
+						! ( error instanceof SqliteImportPassError ) ||
+						! this.shouldRetrySqliteImportWithAst( error )
+					) {
+						throw error;
 					}
-				);
 
-				if ( stdout ) {
-					console.log( `SQLite import stdout: ${ stdout }` );
-				}
+					await this.resetDatabase( rootPath );
+					this.emit( ImportEvents.IMPORT_DATABASE_START );
 
-				if ( stderr ) {
-					console.error( `Error during import of ${ sqlFile }:`, stderr );
-				}
+					try {
+						await this.importStagedSqlFiles( server, stagedSqlFiles, 'ast' );
+					} catch ( astError ) {
+						if ( astError instanceof SqliteImportPassError ) {
+							throw new Error(
+								this.buildSqliteImportFallbackErrorMessage( error, astError )
+							);
+						}
 
-				if ( exitCode ) {
-					throw new Error( 'Database import failed: ' + stderr );
+						throw astError;
+					}
 				}
-			} finally {
-				await this.safelyDeletePath( tmpPath );
+			} else {
+				await this.importStagedSqlFiles( server, stagedSqlFiles, 'ast' );
 			}
+		} finally {
+			await Promise.all(
+				stagedSqlFiles.map( ( { tempPath } ) => this.safelyDeletePath( tempPath ) )
+			);
 		}
 
 		await updateSiteUrl( server, getSiteUrl( server.details ) );
 		this.emit( ImportEvents.IMPORT_DATABASE_COMPLETE );
 	}
 
+	protected getSqliteImportStrategy(): SqliteImportStrategy {
+		return 'ast_only';
+	}
+
+	protected async resetDatabase( rootPath: string ): Promise< void > {
+		const databaseDir = path.join( rootPath, 'wp-content', 'database' );
+		const dbPath = path.join( databaseDir, '.ht.sqlite' );
+		await this.moveExistingDatabaseToTrash( dbPath );
+		await fs.promises.mkdir( databaseDir, { recursive: true } );
+		await this.createEmptyDatabase( dbPath );
+	}
+
+	protected async createEmptyDatabase( dbPath: string ): Promise< void > {
+		await fs.promises.writeFile( dbPath, '' );
+	}
+
+	protected async moveExistingDatabaseToTrash( dbPath: string ): Promise< void > {
+		if ( ! fs.existsSync( dbPath ) ) {
+			return;
+		}
+		await shell.trashItem( dbPath );
+	}
+
 	protected async prepareSqlFile( tmpPath: string ): Promise< void > {
-		// Strip MySQL-specific DDL statements that are incompatible with SQLite.
-		// This handles dumps from mysqldump (e.g., bridge exports) that contain
-		// CREATE DATABASE, USE, or other MySQL-only syntax.
-		const mysqlDdlPattern =
-			/^\s*(CREATE\s+DATABASE|USE\s+`|DROP\s+DATABASE|ALTER\s+DATABASE|\/\*![\d]+\s|LOCK\s+TABLES|UNLOCK\s+TABLES|SET\s+@@)/i;
+		await rewriteSqlFileInPlace( tmpPath, this.transformSqlLine.bind( this ) );
+	}
 
-		const content = await fs.promises.readFile( tmpPath, 'utf8' );
-		const filtered = content
-			.split( '\n' )
-			.filter( ( line ) => ! mysqlDdlPattern.test( line ) )
-			.join( '\n' );
+	protected transformSqlLine( line: string ): string | null {
+		return MYSQL_DDL_PATTERN.test( line ) ? null : line;
+	}
 
-		if ( filtered.length !== content.length ) {
-			await fs.promises.writeFile( tmpPath, filtered, 'utf8' );
+	private async stageSqlFiles(
+		rootPath: string,
+		sqlFiles: string[]
+	): Promise< StagedSqlFile[] > {
+		const sortedSqlFiles = [ ...sqlFiles ].sort( ( a, b ) => a.localeCompare( b ) );
+		const stagedSqlFiles: StagedSqlFile[] = [];
+
+		try {
+			for ( const [ index, sqlFile ] of sortedSqlFiles.entries() ) {
+				const sqlTempFile = `${ generateBackupFilename( `sql-${ index + 1 }` ) }.sql`;
+				const tempPath = path.join( rootPath, sqlTempFile );
+				const stagedSqlFile = {
+					sourcePath: sqlFile,
+					tempPath,
+					vfsPath: `/wordpress/${ sqlTempFile }`,
+				};
+
+				await fs.promises.copyFile( sqlFile, tempPath );
+				stagedSqlFiles.push( stagedSqlFile );
+				await this.prepareSqlFile( tempPath );
+			}
+		} catch ( error ) {
+			await Promise.all(
+				stagedSqlFiles.map( ( { tempPath } ) => this.safelyDeletePath( tempPath ) )
+			);
+			throw error;
+		}
+
+		return stagedSqlFiles;
+	}
+
+	private async importStagedSqlFiles(
+		server: SiteServer,
+		stagedSqlFiles: StagedSqlFile[],
+		mode: SqliteImportMode
+	): Promise< void > {
+		let processedFiles = 0;
+		const totalFiles = stagedSqlFiles.length;
+
+		for ( const stagedSqlFile of stagedSqlFiles ) {
+			processedFiles++;
+
+			this.emit( ImportEvents.IMPORT_DATABASE_PROGRESS, {
+				currentFile: path.basename( stagedSqlFile.sourcePath ),
+				processedFiles,
+				totalFiles,
+			} );
+
+			console.log(
+				`Importing ${ stagedSqlFile.sourcePath }${ mode === 'ast' ? ' with AST driver' : '' }`
+			);
+
+			const { stderr, exitCode, stdout } = await server.executeWpCliCommand(
+				this.buildSqliteImportCommand( stagedSqlFile.vfsPath, mode ),
+				// SQLite plugin requires PHP 8+
+				{
+					targetPhpVersion: DEFAULT_PHP_VERSION,
+					phpMemoryLimit: WP_CLI_SQLITE_IMPORT_MEMORY_LIMIT,
+					skipPluginsAndThemes: true,
+				}
+			);
+
+			if ( stdout ) {
+				console.log( `SQLite import stdout: ${ stdout }` );
+			}
+
+			if ( stderr ) {
+				console.error( `Error during import of ${ stagedSqlFile.sourcePath }:`, stderr );
+			}
+
+			if ( exitCode ) {
+				throw new SqliteImportPassError(
+					mode,
+					stagedSqlFile.sourcePath,
+					stderr,
+					stdout,
+					exitCode
+				);
+			}
 		}
 	}
 
-	protected async safelyDeletePath( path: string ): Promise< void > {
+	private buildSqliteImportCommand(
+		vfsPath: string,
+		mode: SqliteImportMode
+	): string {
+		const baseCommand = `sqlite import ${ vfsPath } --require=/tmp/sqlite-command/command.php`;
+		return mode === 'ast' ? `${ baseCommand } --enable-ast-driver` : baseCommand;
+	}
+
+	private shouldRetrySqliteImportWithAst( error: SqliteImportPassError ): boolean {
+		const errorOutput = [ error.stderr, error.stdout, error.message ].join( '\n' ).toLowerCase();
+		const nonRetryPatterns = [
+			'allowed memory size',
+			'memory exhausted',
+			'out of memory',
+			'cannot allocate wasm memory',
+			'timed out',
+			'no such file',
+			'failed to open stream',
+		];
+
+		return ! nonRetryPatterns.some( ( pattern ) => errorOutput.includes( pattern ) );
+	}
+
+	private buildSqliteImportFallbackErrorMessage(
+		legacyError: SqliteImportPassError,
+		astError: SqliteImportPassError
+	): string {
+		return [
+			'SQLite import failed in both legacy and AST modes.',
+			this.formatSqliteImportPassError( 'Legacy', legacyError ),
+			this.formatSqliteImportPassError( 'AST', astError ),
+		].join( '\n' );
+	}
+
+	private formatSqliteImportPassError(
+		label: string,
+		error: SqliteImportPassError
+	): string {
+		return [
+			`${ label } file: ${ error.sqlFile }`,
+			`${ label } exit code: ${ error.exitCode }`,
+			`${ label } stderr: ${ error.stderr || '<empty>' }`,
+			`${ label } stdout: ${ error.stdout || '<empty>' }`,
+		].join( '\n' );
+	}
+
+	protected async safelyDeletePath( pathToDelete: string ): Promise< void > {
 		try {
-			await fs.promises.rm( path, { recursive: true, force: true } );
+			await fs.promises.rm( pathToDelete, { recursive: true, force: true } );
 		} catch ( error ) {
-			console.error( `Failed to safely delete path ${ path }:`, error );
+			console.error( `Failed to safely delete path ${ pathToDelete }:`, error );
 		}
 	}
 }
@@ -144,11 +306,7 @@ abstract class BaseBackupImporter extends BaseImporter {
 				this.meta = await this.parseMetaFile();
 			}
 			if ( this.backup.sqlFiles.length ) {
-				const databaseDir = path.join( rootPath, 'wp-content', 'database' );
-				const dbPath = path.join( databaseDir, '.ht.sqlite' );
-
-				await this.moveExistingDatabaseToTrash( dbPath );
-				await this.createEmptyDatabase( dbPath );
+				await this.resetDatabase( rootPath );
 				await this.importDatabase( rootPath, siteId, this.backup.sqlFiles );
 			}
 
@@ -169,18 +327,6 @@ abstract class BaseBackupImporter extends BaseImporter {
 	}
 
 	protected abstract parseMetaFile(): Promise< MetaFileData | undefined >;
-
-	protected async createEmptyDatabase( dbPath: string ): Promise< void > {
-		await fs.promises.writeFile( dbPath, '' );
-	}
-
-	protected async moveExistingDatabaseToTrash( dbPath: string ): Promise< void > {
-		if ( ! fs.existsSync( dbPath ) ) {
-			return;
-		}
-		await shell.trashItem( dbPath );
-	}
-
 	protected async moveExistingWpContentToTrash( rootPath: string ): Promise< void > {
 		const wpContentDir = path.join( rootPath, 'wp-content' );
 		try {
@@ -188,12 +334,12 @@ abstract class BaseBackupImporter extends BaseImporter {
 				return;
 			}
 			const contentToKeep = [
-				/^mu-plugins$/, // Match mu-plugins directory exactly
-				/^mu-plugins(\/|\\)sqlite-database-integration(\/|\\)?.*/, // Match sqlite-database-integration dir and contents
-				/^database(\/|\\)?.*/, // Match database dir and all contents
-				/^db\.php$/, // Exact match for db.php
-				/^index\.php$/, // Exact match for index.php
-				/^languages(\/|\\)?.*/, // Match languages dir and all contents
+				/^mu-plugins$/,
+				/^mu-plugins(\/|\\)sqlite-database-integration(\/|\\)?.*/,
+				/^database(\/|\\)?.*/,
+				/^db\.php$/,
+				/^index\.php$/,
+				/^languages(\/|\\)?.*/,
 			];
 
 			const contents = await fs.promises.readdir( wpContentDir, { recursive: true } );
@@ -226,7 +372,6 @@ abstract class BaseBackupImporter extends BaseImporter {
 		const wpContentSourceDir = this.backup.wpContentDirectory;
 		const wpContentDestDir = path.join( rootPath, 'wp-content' );
 
-		// Group files by type
 		const filesByType = this.categorizeWpContentFiles( this.backup.wpContentFiles );
 		let processedItems = 0;
 		const totalItems = this.backup.wpContentFiles.length;
@@ -235,16 +380,10 @@ abstract class BaseBackupImporter extends BaseImporter {
 			for ( const file of files ) {
 				try {
 					const stats = await lstat( file );
-					// Skip if it's a directory
 					if ( stats.isDirectory() ) {
 						continue;
 					}
 				} catch {
-					/**
-					 * If the file does not exist, skip it.
-					 * This can happen if a empty directory is included in the backup
-					 * because the empty directory won't be included in the extraction.
-					 */
 					continue;
 				}
 
@@ -259,7 +398,6 @@ abstract class BaseBackupImporter extends BaseImporter {
 
 				processedItems++;
 
-				// Emit progress event after file is copied
 				this.emit( ImportEvents.IMPORT_WP_CONTENT_PROGRESS, {
 					type: type as 'plugins' | 'themes' | 'uploads' | 'other',
 					currentItem: relativePath,
@@ -312,8 +450,16 @@ abstract class BaseBackupImporter extends BaseImporter {
 }
 
 export class JetpackImporter extends BaseBackupImporter {
-	// Jetpack importer follows merge strategy to support selective sync
 	protected shouldCleanUpBeforeImport = false;
+
+	protected getSqliteImportStrategy(): SqliteImportStrategy {
+		return 'legacy_first_with_ast_fallback';
+	}
+
+	protected async prepareSqlFile( tmpPath: string ): Promise< void > {
+		await super.prepareSqlFile( tmpPath );
+		await batchJetpackExtendedInsertsInPlace( tmpPath );
+	}
 
 	protected async parseMetaFile(): Promise< MetaFileData | undefined > {
 		const metaFilePath = this.backup.metaFile;
@@ -328,7 +474,7 @@ export class JetpackImporter extends BaseBackupImporter {
 				phpVersion: this.parsePhpVersion( meta?.phpVersion ),
 				wordpressVersion: meta?.wordpressVersion || '',
 			};
-		} catch ( e ) {
+		} catch {
 			return;
 		} finally {
 			this.emit( ImportEvents.IMPORT_META_COMPLETE );
@@ -350,7 +496,7 @@ export class LocalImporter extends BaseBackupImporter {
 				phpVersion: this.parsePhpVersion( meta?.services?.php?.version ),
 				wordpressVersion: '',
 			};
-		} catch ( e ) {
+		} catch {
 			return;
 		} finally {
 			this.emit( ImportEvents.IMPORT_META_COMPLETE );
@@ -429,35 +575,13 @@ export class WpressImporter extends BaseBackupImporter {
 		}
 	}
 
-	protected async prepareSqlFile( tmpPath: string ): Promise< void > {
-		// First strip MySQL-specific DDL (base class handling)
-		await super.prepareSqlFile( tmpPath );
+	protected transformSqlLine( line: string ): string | null {
+		const transformedLine = super.transformSqlLine( line );
+		if ( transformedLine === null ) {
+			return null;
+		}
 
-		// Then handle wpress-specific SERVMASK_PREFIX replacement
-		const tempOutputPath = `${ tmpPath }.tmp`;
-		const readStream = fs.createReadStream( tmpPath, 'utf8' );
-		const writeStream = fs.createWriteStream( tempOutputPath, 'utf8' );
-
-		const rl = createInterface( {
-			input: readStream,
-			crlfDelay: Infinity,
-		} );
-
-		rl.on( 'line', ( line: string ) => {
-			writeStream.write( line.replace( /SERVMASK_PREFIX/g, 'wp' ) + '\n' );
-		} );
-
-		await new Promise( ( resolve, reject ) => {
-			rl.on( 'close', resolve );
-			rl.on( 'error', reject );
-		} );
-
-		await new Promise( ( resolve, reject ) => {
-			writeStream.end( resolve );
-			writeStream.on( 'error', reject );
-		} );
-
-		await fs.promises.rename( tempOutputPath, tmpPath );
+		return transformedLine.replace( /SERVMASK_PREFIX/g, 'wp' );
 	}
 
 	protected async addSqlToSetTheme( sqlFiles: string[] ): Promise< void > {
