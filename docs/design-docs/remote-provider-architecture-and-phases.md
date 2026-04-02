@@ -21,7 +21,7 @@ This plan covers:
 
 This plan does **not** redesign WP.com auth or the existing WP.com sync flow.
 
-## Progress update - 2026-03-31
+## Progress update - 2026-04-01
 
 The provider-expansion work is no longer purely architectural.
 
@@ -31,9 +31,11 @@ Completed and validated:
 - shared bridge-backed provider plumbing in Studio,
 - provider-aware bridge contract generalization,
 - WP Remote bridge bootstrap and discovery against a real Flywheel-hosted Avenue941 test site,
-- Studio-side WP Remote account save and discovered-site listing in discovery-only mode.
+- Studio-side WP Remote account save and discovered-site listing in discovery-only mode,
+- bridge-side WP Remote backup/export and compatibility gating on a compatible host,
+- successful manual Studio import of the real WP Remote export artifact.
 
-The next implementation phase should therefore focus on **bridge-owned WP Remote backup/export support for compatible hosts**, while a separate Flywheel-native track is planned for Flywheel-hosted sites that cannot rely on unpatched WP Remote filesystem export.
+Phase 6 is now complete for compatible-host export support. The remaining WP Remote work moves to Phase 7 pull activation, while a separate Flywheel-native track is planned for Flywheel-hosted sites that cannot rely on unpatched WP Remote filesystem export.
 
 ## Current architecture
 
@@ -45,23 +47,23 @@ The current provider pull path is:
 2. `apps/studio/src/modules/add-site/index.tsx`
 3. `apps/studio/src/modules/add-site/components/select-remote-provider.tsx`
 4. `apps/studio/src/modules/add-site/components/pull-provider-remote-site.tsx`
-5. `apps/studio/src/modules/sync/providers/mainwp-bridge/site-selector.tsx`
+5. `apps/studio/src/modules/sync/providers/bridge/site-selector.tsx`
 6. `apps/studio/src/hooks/use-add-site.ts` (`handleCreateSite()` plus `connectSite` handoff)
 7. `apps/studio/src/stores/sync/connected-sites.ts`
 8. `apps/studio/src/stores/sync/sync-operations-slice.ts`
 9. `apps/studio/src/preload.ts`
 10. `apps/studio/src/modules/sync/providers/ipc-handlers.ts`
-11. `apps/studio/src/modules/sync/providers/mainwp-bridge/client.ts`
+11. `apps/studio/src/modules/sync/providers/bridge/client.ts`
 12. bridge HTTP endpoints implemented in `studio-hetzner-bridge/src/app.ts`
 13. existing site import pipeline
 
 ### Current implementation reality
 
-- `registry.ts` still contains placeholder providers that do not match the desired roadmap.
-- `pull-provider-remote-site.tsx` is effectively wired around `mainwpBridge`.
-- `modules/sync/types.ts` and `sync-operations-slice.ts` are narrowed around one bridge-backed provider.
-- The current bridge repo is named Hetzner-specific, but the HTTP contract is already mostly provider-neutral.
-- WP Remote likely needs bridge-side handling because its plugin code suggests signed callbacks and connection keys.
+- `registry.ts` now models the shipped provider lineup: `wpRemote`, `mainwpBridge`, `flywheel`, and `wpEngine`.
+- provider selection is routed through shared bridge-backed plumbing rather than a MainWP-only client path.
+- `modules/sync/types.ts`, the bridge client, and provider IPC now handle bridge-backed providers additively while preserving MainWP compatibility.
+- the bridge repo name remains Hetzner-specific, but the HTTP contract and provider metadata are now provider-aware.
+- WP Remote still requires bridge-side handling because its plugin contract depends on connection-key bootstrap, signed callbacks, and server-side secret custody.
 
 ## Key architectural decisions
 
@@ -131,7 +133,7 @@ This lets the same chooser render:
 - discovery entries,
 - temporarily disabled providers.
 
-For the current rollout, WP Remote should use the **discovery** state in the top-level picker even while bridge-side export work continues.
+For the current rollout, WP Remote should use the **discovery** state in the top-level picker while pull activation remains Phase 7-gated, even though bridge-side export is now validated for compatible hosts.
 
 ### Provider definition shape
 
@@ -465,7 +467,7 @@ This phase remains **bridge-first**:
 - implement a real WP Remote `runBackup()` path,
 - implement a real WP Remote `runExport()` path,
 - expose backup inventory for validated WP Remote sites,
-- keep Studio-side `pull` disabled and the shipped top-level picker discovery-only until artifact correctness and runtime compatibility are both proven.
+- keep Studio-side `pull` disabled and the shipped top-level picker discovery-only through Phase 6, then activate pull deliberately in Phase 7 only for compatibility-validated sites.
 
 ### Design summary
 
@@ -480,7 +482,7 @@ For WP Remote, that means:
 
 - `runBackup()` creates a **bridge-owned staged snapshot** under the backup directory,
 - `runExport()` packages that staged snapshot into the normal tar.gz artifact,
-- site capabilities become:
+- for rollout-enabled, compatibility-validated WP Remote sites, the bridge may advertise:
   - `backupCreate: true`
   - `backupsRead: true`
   - `pull: false`
@@ -494,26 +496,41 @@ The real Avenue941 Flywheel fixture has now shown two different truths:
 
 This means Phase 6 should complete WP Remote export for **compatible hosts**, but it must not treat unpatched Flywheel WP Remote as generally supported.
 
-### Expected bridge changes
+Phase 6 is now complete for compatible-host WP Remote export support. The bridge-side rollout flag, route gating, stream parser, staged snapshot assembly, real executor, compatibility downgrade, and Studio-side import-path hardening are all implemented and live-validated.
 
-- add a rollout flag such as `WPREMOTE_EXPORT_ENABLED`,
-- extend `src/providers/wpremote/transport.ts` with stream support,
-- add a stream parser module for WP Remote framed responses,
-- add a backup-session module that stages SQL and `wp-content` locally,
-- add an SQL dump serializer built from WP Remote DB wing responses,
-- replace the discovery-only unsupported WP Remote executor with real backup/export behavior,
-- adjust the export route guard in `src/app.ts` so it no longer requires `site.capabilities.pull`,
-- add a runtime compatibility canary so DB-valid / FS-invalid sites stay discovery-only,
-- keep import/restore unsupported.
+### Implemented bridge changes
 
-### Validation milestones
+The current bridge code now includes:
 
-1. a real Avenue941 backup job writes a staged snapshot and manifest,
-2. backup inventory is visible from the bridge,
-3. export job creates a downloadable artifact,
-4. artifact extracts into the expected `sql/`, `wp-content/`, and `meta.json` layout,
-5. Studio can manually import that artifact through the existing import path,
-6. incompatible runtimes are kept discovery-only before pull activation.
+- `WPREMOTE_EXPORT_ENABLED` rollout/config gating,
+- streamed callback parsing in `src/providers/wpremote/transport.ts`,
+- framed checksum-validating stream decoding in `src/providers/wpremote/stream-parser.ts`,
+- staged SQL + `wp-content` snapshot assembly in `src/providers/wpremote/backup-session.ts`,
+- SQL dump synthesis in `src/providers/wpremote/sql-dump.ts`,
+- a real WP Remote executor in `src/providers/wpremote/executor.ts`,
+- export route gating that no longer depends on `site.capabilities.pull`,
+- a runtime compatibility canary so DB-valid / FS-invalid sites stay discovery-only,
+- import/restore remaining unsupported.
+
+### Completed validation milestones
+
+The following were verified on 2026-04-01 against the compatible Avenue941 fixture:
+
+1. backup job `c4263561-bbc1-4b2a-9a46-1397f7c9663d` wrote a staged snapshot and manifest,
+2. backup inventory exposed that staged backup from the bridge,
+3. export job `294cceb6-b4fd-4e04-8fb9-33e188c7564b` created a downloadable artifact,
+4. the artifact extracted into the expected `sql/`, `wp-content/`, and `meta.json` layout,
+5. Studio manually imported that artifact successfully through `JetpackImporter`,
+6. deployed rollout posture was verified from live runtime and Dokploy evidence,
+7. incompatible runtimes still remain discovery-only before pull activation.
+
+### Remaining work after Phase 6
+
+The remaining WP Remote work now moves to Phase 7:
+
+- project pull capability only for compatibility-validated sites,
+- relax the current Studio guard only for those sites,
+- validate the end-to-end selectable Studio pull flow without regressing the current discovery-only shipped picker semantics until activation is deliberate.
 
 ### Out of scope
 

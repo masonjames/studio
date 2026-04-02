@@ -18,14 +18,15 @@ This backlog tracks the work required to ship the remote-provider expansion road
 - Keep implementation notes under the relevant task instead of adding separate scratch docs when possible.
 - Do not store secrets, tokens, or credential values in this file.
 
-## Progress snapshot - 2026-03-31
+## Progress snapshot - 2026-04-01
 
 - Studio provider-model generalization is complete.
 - Shared bridge-backed provider plumbing is complete.
 - Provider-aware bridge contract generalization is complete.
-- WP Remote bootstrap/discovery is now manually validated on a real Flywheel-hosted Avenue941 test site.
-- The shipped Studio picker keeps WP Remote discovery-only until Phase 7.
-- Bridge-side WP Remote export is implemented in code, but real-site verification is still in progress before any Studio pull activation.
+- WP Remote bootstrap/discovery is manually validated on a real Flywheel-hosted Avenue941 test site.
+- Bridge-side WP Remote export and runtime compatibility downgrade are now live-verified on a compatible host.
+- The produced WP Remote export artifact is now proven importable through Studio's existing import path.
+- The shipped Studio picker still keeps WP Remote discovery-only until Phase 7 pull activation.
 - Flywheel now has a separate native-support track because unpatched Flywheel WP Remote filesystem export is not reliable.
 
 ## Phase 1 - Studio provider model and chooser updates
@@ -162,11 +163,11 @@ Prove the exact contract required for WP Remote before implementation begins.
   - Document what the bridge must own.
   - Discovery conclusion: the connection key is a pairing seed only; the bridge must own runtime callback credentials, signing material, and replay-safe request dispatch.
 
-- [-] **P4-2 | research | Validate WP Remote assumptions against available fixtures**
+- [x] **P4-2 | research | Validate WP Remote assumptions against available fixtures**
   - Use the available WP Remote codebases and approved test environments.
   - Capture implementation constraints without storing secrets.
-  - Completed so far: pairing bootstrap, signed callback validation, bridge site registration, and Studio discovery were proven against a real Flywheel-hosted Avenue941 fixture on 2026-03-31.
-  - Remaining gate: prove DB access, filesystem export, and artifact-assembly feasibility.
+  - Pairing bootstrap, signed callback validation, bridge site registration, and Studio discovery were proven against a real Flywheel-hosted Avenue941 fixture on 2026-03-31.
+  - DB access, filesystem export, artifact assembly, and manual Studio import feasibility were then proven on 2026-04-01 against the compatible/patched Avenue941 fixture.
 
 - [x] **P4-3 | studio-hetzner-bridge | Draft WP Remote bridge adapter contract**
   - Map WP Remote onto the existing site/job/artifact lifecycle if possible.
@@ -230,7 +231,7 @@ Ship the first real WP Remote runtime slice:
 
 ### Goal
 
-Implement real bridge-side WP Remote backup/export support for **compatible hosts** while keeping Studio pull disabled until artifact correctness and runtime compatibility are both proven.
+Implement real bridge-side WP Remote backup/export support for **compatible hosts** while keeping Studio pull disabled through Phase 6 and leaving deliberate pull activation to Phase 7.
 
 ### Exit criteria
 
@@ -270,22 +271,24 @@ Detailed bridge implementation notes for this phase live in `studio-hetzner-brid
   - Covers export artifact creation.
   - Covers route/capability behavior with `pull: false`.
 
-- [-] **P6-6 | validation | Run real-site WP Remote export verification**
-  - Live reruns against the patched Avenue941 fixture now reach:
-    - DB completion,
-    - full FS inventory,
-    - active file download and local snapshot growth.
-  - Remaining gates:
-    - backup completion,
-    - backup inventory visibility,
-    - export artifact generation,
-    - manual Studio import.
-  - The shipped Studio picker must remain discovery-only until these gates and Phase 7 activation are complete.
+- [x] **P6-6 | validation | Run real-site WP Remote export verification**
+  - Verified on 2026-04-01 against the compatible Avenue941 fixture:
+    - backup job `c4263561-bbc1-4b2a-9a46-1397f7c9663d` completed,
+    - backup inventory showed the staged backup,
+    - export job `294cceb6-b4fd-4e04-8fb9-33e188c7564b` completed,
+    - the resulting tarball contained `sql/database.sql`, `meta.json`, and `wp-content/**`,
+    - the real artifact then imported successfully into Studio through `JetpackImporter`.
+  - The shipped Studio picker still remains discovery-only until Phase 7 activation is explicitly implemented.
 
-- [ ] **P6-7 | studio-hetzner-bridge | Add WP Remote runtime compatibility canary and capability downgrade**
-  - Detect sites where WP Remote validation succeeds but filesystem export does not.
-  - Keep those sites discovery-only with a concrete unsupported reason.
-  - Do not advertise backup/export for known-incompatible runtimes such as unpatched Flywheel WP Remote.
+- [x] **P6-7 | studio-hetzner-bridge | Add WP Remote runtime compatibility canary and capability downgrade**
+  - Implemented in `studio-hetzner-bridge/src/providers/wpremote/catalog.ts`.
+  - Covered by `studio-hetzner-bridge/test/wpremote-catalog.test.ts`.
+  - DB-valid / FS-invalid sites now stay discovery-only and do not advertise backup/export capability.
+
+- [x] **P6-8 | platform-infra | Refresh live WP Remote rollout evidence**
+  - Live runtime and Dokploy verification on 2026-04-01 confirmed the deployed bridge is running with `WPREMOTE_EXPORT_ENABLED=true` and seeded WP Remote config.
+  - Platform docs now distinguish repo-code support, live runtime verification, and the still-stale checked-in env-key snapshot.
+  - We still do not infer live WP Remote export enablement from repo code alone.
 
 ## Phase 7 - WP Remote pull activation for compatible hosts
 
@@ -399,10 +402,11 @@ Prepare the app and supporting docs for stable testing, rollout, and ongoing mai
   - `npm test -- <relevant test path>`
   - `npm start`
 
-- [ ] **P10-5 | docs | Update cross-repo runbooks as implementation lands**
+- [x] **P10-5 | docs | Update cross-repo runbooks as implementation lands**
   - `studio`
   - `studio-hetzner-bridge`
   - `platform-infra`
+  - Completed on 2026-04-01 as part of the WP Remote Phase 6 live-validation closeout.
 
 ## Notes and decisions log
 
@@ -418,7 +422,7 @@ Prepare the app and supporting docs for stable testing, rollout, and ongoing mai
 
 ### To record as work progresses
 
-- Decision date for WP Remote compatible-host rollout:
+- Decision date for WP Remote compatible-host rollout: 2026-04-01
 - Decision date for Flywheel native implementation viability:
 - Decision date for WP Engine implementation viability:
 - Decision date for bridge renaming, if ever approved:
