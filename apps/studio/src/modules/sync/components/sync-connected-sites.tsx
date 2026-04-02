@@ -37,7 +37,7 @@ import {
 import { getSiteEnvironment } from 'src/modules/sync/lib/environment-utils';
 import {
 	canStudioPullSite,
-	getStudioPullActivationMessage,
+	getStudioPullDisabledMessage,
 } from 'src/modules/sync/providers/pull-activation';
 import { useAppDispatch, useI18nLocale, useRootSelector } from 'src/stores';
 import {
@@ -63,9 +63,7 @@ const SyncConnectedSiteControls = ( {
 	const { __ } = useI18n();
 	const isOffline = useOffline();
 	const dispatch = useAppDispatch();
-	const pullUnavailableMessage =
-		getStudioPullActivationMessage( connectedSite.provider ) ??
-		__( 'Pull is not available for this provider yet.' );
+	const pullUnavailableMessage = getStudioPullDisabledMessage( connectedSite );
 	const [ syncDialogType, setSyncDialogType ] = useState< 'pull' | 'push' | null >( null );
 	const isAnySitePulling = useRootSelector( syncOperationsSelectors.selectIsAnySitePulling );
 	const isAnySitePushing = useRootSelector( syncOperationsSelectors.selectIsAnySitePushing );

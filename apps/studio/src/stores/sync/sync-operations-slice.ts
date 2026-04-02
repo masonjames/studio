@@ -8,12 +8,14 @@ import { getIpcApi } from 'src/lib/get-ipc-api';
 import { getHostnameFromUrl } from 'src/lib/url-utils';
 import {
 	canStudioPullSite,
-	getStudioPullActivationMessage,
+	getStudioPullDisabledMessage,
 } from 'src/modules/sync/providers/pull-activation';
 import { hasRemoteProviderClient } from 'src/modules/sync/providers/supported-providers';
 import {
 	getWpcomNumericSiteId,
 	isWpcomSyncSite,
+	type ProviderPullLifecycleSnapshot,
+	type PullSiteOptions,
 	type RemotePullOperation,
 	SyncSite,
 } from 'src/modules/sync/types';
@@ -54,17 +56,14 @@ async function updateSiteTimestamp( {
 	] );
 }
 
-export type PullSiteOptions = {
-	optionsToSync: SyncOption[];
-	include_path_list?: string[];
-};
-
 export type SyncBackupState = {
 	remoteSiteId: string;
 	legacyRemoteSiteId?: number;
 	backupId: number | null;
 	providerOperation?: RemotePullOperation;
 	pullOptions?: PullSiteOptions;
+	executionModel?: 'renderer' | 'main';
+	orchestrationSequence?: number;
 	status: PullStateProgressInfo;
 	downloadUrl: string | null;
 	selectedSite: SiteDetails;
@@ -297,6 +296,46 @@ window.ipcListener.subscribe( 'sync-upload-resumed', ( _event, payload ) => {
 	);
 } );
 
+function applyProviderPullLifecycleSnapshot( snapshot: ProviderPullLifecycleSnapshot ) {
+	const currentState = syncOperationsSelectors.selectPullState(
+		snapshot.selectedSiteId,
+		snapshot.remoteSiteId
+	)( store.getState() );
+	if (
+		currentState?.executionModel === 'main' &&
+		typeof currentState.orchestrationSequence === 'number' &&
+		currentState.orchestrationSequence > snapshot.sequence
+	) {
+		return;
+	}
+
+	store.dispatch(
+		syncOperationsActions.updatePullState( {
+			selectedSiteId: snapshot.selectedSiteId,
+			remoteSiteId: snapshot.remoteSiteId,
+			state: {
+				backupId: null,
+				providerOperation: snapshot.providerOperation,
+				pullOptions: snapshot.pullOptions,
+				executionModel: snapshot.executionModel,
+				orchestrationSequence: snapshot.sequence,
+				status: snapshot.status,
+				downloadUrl: null,
+				remoteSiteUrl: snapshot.remoteSiteUrl,
+				selectedSite: snapshot.selectedSite,
+			},
+		} )
+	);
+
+	if ( snapshot.status.key === 'finished' ) {
+		void store.dispatch( connectedSitesApi.util.invalidateTags( [ 'ConnectedSites' ] ) );
+	}
+}
+
+window.ipcListener.subscribe( 'provider-pull-state-changed', ( _event, snapshot ) => {
+	applyProviderPullLifecycleSnapshot( snapshot );
+} );
+
 const createTypedAsyncThunk = createAsyncThunk.withTypes< {
 	state: RootState;
 	dispatch: AppDispatch;
@@ -320,7 +359,16 @@ const cancelPushThunk = createTypedAsyncThunk(
 		const abortCallback = PUSH_SITE_ABORT_CALLBACKS.get( operationId );
 
 		abortCallback?.();
-		getIpcApi().cancelSyncOperation( operationId );
+		const cancellation = await getIpcApi().cancelSyncOperation( operationId );
+		if ( ! cancellation.accepted ) {
+			if ( cancellation.message ) {
+				getIpcApi().showNotification( {
+					title: __( 'Unable to cancel push' ),
+					body: cancellation.message,
+				} );
+			}
+			return;
+		}
 
 		dispatch(
 			syncOperationsActions.updatePushState( {
@@ -341,7 +389,16 @@ const cancelPullThunk = createTypedAsyncThunk(
 	'syncOperations/cancelPull',
 	async ( { selectedSiteId, remoteSiteId }: CancelOperationPayload, { dispatch } ) => {
 		const operationId = generateStateId( selectedSiteId, remoteSiteId );
-		getIpcApi().cancelSyncOperation( operationId );
+		const cancellation = await getIpcApi().cancelSyncOperation( operationId );
+		if ( ! cancellation.accepted ) {
+			if ( cancellation.message ) {
+				getIpcApi().showNotification( {
+					title: __( 'Unable to cancel pull' ),
+					body: cancellation.message,
+				} );
+			}
+			return;
+		}
 
 		dispatch(
 			syncOperationsActions.updatePullState( {
@@ -561,6 +618,8 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 		const remoteSiteId = connectedSite.id;
 		const remoteSiteUrl = connectedSite.url;
 		const wpcomRemoteSiteId = getWpcomNumericSiteId( connectedSite );
+		const isMainOwnedProviderPull =
+			hasRemoteProviderClient( connectedSite.provider ) && Boolean( connectedSite.providerAccountId );
 		const pullOptions: PullSiteOptions = {
 			optionsToSync: [ ...options.optionsToSync ],
 			include_path_list: options.include_path_list ? [ ...options.include_path_list ] : undefined,
@@ -569,9 +628,7 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 		if ( ! canStudioPullSite( connectedSite ) ) {
 			return rejectWithValue( {
 				title: sprintf( __( 'Error pulling from %s' ), connectedSite.name ),
-				message:
-					getStudioPullActivationMessage( connectedSite.provider ) ??
-					__( 'Pull is not available for this provider yet.' ),
+				message: getStudioPullDisabledMessage( connectedSite ),
 			} );
 		}
 
@@ -583,6 +640,7 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 					backupId: null,
 					providerOperation: undefined,
 					pullOptions,
+					executionModel: isMainOwnedProviderPull ? 'main' : 'renderer',
 					legacyRemoteSiteId: wpcomRemoteSiteId,
 					status: pullStatesProgressInfo[ 'in-progress' ],
 					downloadUrl: null,
@@ -639,22 +697,15 @@ export const pullSiteThunk = createTypedAsyncThunk< PullSiteResult, PullSitePayl
 			}
 
 			if ( hasRemoteProviderClient( connectedSite.provider ) && connectedSite.providerAccountId ) {
-				const providerOperation = await getIpcApi().startRemotePull(
-					connectedSite.providerAccountId,
-					connectedSite.remoteSiteId
-				);
-				dispatch(
-					syncOperationsActions.updatePullState( {
-						selectedSiteId: selectedSite.id,
-						remoteSiteId,
-						state: {
-							providerOperation,
-						},
-					} )
-				);
+				const lifecycle = await getIpcApi().startProviderPullLifecycle( {
+					connectedSite,
+					selectedSite,
+					pullOptions,
+				} );
+				applyProviderPullLifecycleSnapshot( lifecycle );
 
 				return {
-					providerOperation,
+					providerOperation: lifecycle.providerOperation,
 					remoteSiteId,
 				};
 			}
@@ -846,6 +897,10 @@ const pollPullBackupThunk = createTypedAsyncThunk(
 		)( getState() );
 
 		if ( ! currentPullState ) {
+			return;
+		}
+
+		if ( currentPullState.executionModel === 'main' ) {
 			return;
 		}
 
@@ -1166,12 +1221,17 @@ function mapImportResponseToPushState( response: ImportResponse ): PushStateProg
 // Thunk to initialize push states from in-progress server operations on mount
 export const initializeSyncStatesThunk = createTypedAsyncThunk(
 	'syncOperations/initializeSyncStates',
-	async ( _arg, { dispatch } ) => {
+	async ( _unused, { dispatch } ) => {
+		const allSites = await getIpcApi().getSiteDetails();
+		const activeProviderPulls = await getIpcApi().getActiveProviderPullLifecycles();
+		activeProviderPulls.forEach( ( snapshot ) => {
+			applyProviderPullLifecycleSnapshot( snapshot );
+		} );
+
 		const client = getWpcomClient();
 		if ( ! client ) {
 			return;
 		}
-		const allSites = await getIpcApi().getSiteDetails();
 		const allConnectedSites = await getIpcApi().getConnectedRemoteSites();
 
 		for ( const connectedSite of allConnectedSites ) {

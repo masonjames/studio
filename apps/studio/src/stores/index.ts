@@ -125,6 +125,9 @@ startAppListening( {
 	effect( action ) {
 		const { selectedSiteId, remoteSiteId, state } = action.payload;
 		const stateId = generateStateId( selectedSiteId, remoteSiteId );
+		if ( state.executionModel === 'main' ) {
+			return;
+		}
 		keepSyncOperationInSync( stateId, state.status );
 	},
 } );
@@ -203,6 +206,7 @@ function isPullPollable( selectedSiteId: string, remoteSiteId: string ) {
 		remoteSiteId
 	)( store.getState() );
 	return (
+		pullState?.executionModel !== 'main' &&
 		pullState?.status.key === 'in-progress' &&
 		( Boolean( pullState.backupId ) || Boolean( pullState.providerOperation ) )
 	);

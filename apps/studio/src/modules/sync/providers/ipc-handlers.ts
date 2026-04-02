@@ -2,17 +2,21 @@ import { type IpcMainInvokeEvent } from 'electron';
 import { randomUUID } from 'node:crypto';
 import {
 	type BridgeBackedRemoteProvider,
+	type ProviderPullLifecycleSnapshot,
+	type PullSiteOptions,
 	type RemoteProvider,
 	type RemoteProviderAccount,
 	type RemoteProviderSiteListResult,
 	type RemotePullOperation,
 	type RemotePullUpdate,
+	type SyncSite,
 	type TestRemoteProviderAccountInput,
 	type TestRemoteProviderAccountResult,
 	type UpsertRemoteProviderAccountInput,
 } from 'src/modules/sync/types';
 import { loadUserData, lockAppdata, saveUserData, unlockAppdata } from 'src/storage/user-data';
 import { getRemoteProviderClient } from './provider-clients';
+import { providerPullManager } from './provider-pull-manager';
 
 function ensureProviderAccounts( userData: Awaited< ReturnType< typeof loadUserData > > ) {
 	userData.remoteProviderAccounts = userData.remoteProviderAccounts || [];
@@ -206,4 +210,21 @@ export async function downloadRemotePullArtifact(
 	const account = requireRemoteProviderAccount( ensureProviderAccounts( userData ), accountId );
 	const client = getRemoteProviderClient( account.provider );
 	return client.downloadPullArtifact( account, jobId, operationId );
+}
+
+export async function startProviderPullLifecycle(
+	_event: IpcMainInvokeEvent,
+	input: {
+		connectedSite: SyncSite;
+		selectedSite: SiteDetails;
+		pullOptions: PullSiteOptions;
+	}
+): Promise< ProviderPullLifecycleSnapshot > {
+	return providerPullManager.startPull( input );
+}
+
+export async function getActiveProviderPullLifecycles(
+	_event: IpcMainInvokeEvent
+): Promise< ProviderPullLifecycleSnapshot[] > {
+	return providerPullManager.listActivePulls();
 }

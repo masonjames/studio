@@ -22,12 +22,14 @@ import { getAuthenticationToken } from 'src/lib/oauth';
 import { keepSqliteIntegrationUpdated } from 'src/lib/sqlite-versions';
 import {
 	buildRemoteSiteKey,
+	type CancelSyncOperationResult,
 	getWpcomNumericSiteId,
 	isWpcomSyncSite,
 	SyncSite,
 } from 'src/modules/sync/types';
 import { SiteServer } from 'src/site-server';
 import { loadUserData, lockAppdata, saveUserData, unlockAppdata } from 'src/storage/user-data';
+import { providerPullManager } from 'src/modules/sync/providers/provider-pull-manager';
 import { SyncOption } from 'src/types';
 
 /**
@@ -113,20 +115,35 @@ export function clearSyncOperation( event: IpcMainInvokeEvent, id: string ) {
 	SYNC_ABORT_CONTROLLERS.delete( id );
 }
 
-export function cancelSyncOperation( event: IpcMainInvokeEvent, id: string ) {
+export async function cancelSyncOperation(
+	event: IpcMainInvokeEvent,
+	id: string
+): Promise< CancelSyncOperationResult > {
+	if ( providerPullManager.hasActivePull( id ) ) {
+		return providerPullManager.cancelPull( id );
+	}
+
+	let accepted = false;
 	const abortController = SYNC_ABORT_CONTROLLERS.get( id );
 	if ( abortController ) {
+		accepted = true;
 		abortController.abort();
 		SYNC_ABORT_CONTROLLERS.delete( id );
 	}
 
 	const uploadState = SYNC_TUS_UPLOADS.get( id );
 	if ( uploadState ) {
+		accepted = true;
 		uploadState.abortController.abort();
 		SYNC_TUS_UPLOADS.delete( id );
 	}
 
-	ACTIVE_SYNC_OPERATIONS.delete( id );
+	if ( accepted ) {
+		ACTIVE_SYNC_OPERATIONS.delete( id );
+		return { accepted: true };
+	}
+
+	return { accepted: false, message: 'This sync operation can no longer be cancelled.' };
 }
 
 /**

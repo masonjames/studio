@@ -19,10 +19,9 @@ export const EXTERNAL_REMOTE_PROVIDER_DEFINITIONS: RemoteProviderDefinition[] = 
 		id: 'wpRemote',
 		label: 'WP Remote',
 		description:
-			'Discovery-only in Studio until Phase 7. Bridge-side WP Remote export validation continues for compatible hosts, but pull stays locked in the shipped picker.',
+			'Connect through a bridge that validates WP Remote registrations. Only compatibility-validated sites can be pulled into Studio.',
 		providerLabel: 'WP Remote',
-		availability: 'discovery',
-		availabilityLabel: 'Discovery only',
+		availability: 'available',
 		siteSelector: 'wpRemote',
 	},
 	{

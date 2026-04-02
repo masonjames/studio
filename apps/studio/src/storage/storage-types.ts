@@ -1,6 +1,10 @@
 import { StatsMetric } from 'src/lib/bump-stats';
 import { SupportedEditor } from 'src/modules/user-settings/lib/editor';
-import type { RemoteProviderAccount, SyncSite } from 'src/modules/sync/types';
+import type {
+	PersistedProviderPullRecord,
+	RemoteProviderAccount,
+	SyncSite,
+} from 'src/modules/sync/types';
 import type { SupportedTerminal } from 'src/modules/user-settings/lib/terminal';
 
 export interface WindowBounds {
@@ -27,6 +31,7 @@ export interface UserData {
 	connectedRemoteSites?: SyncSite[];
 	connectedWpcomSites?: { [ userId: number ]: SyncSite[] };
 	remoteProviderAccounts?: RemoteProviderAccount[];
+	providerPullOperations?: Record< string, PersistedProviderPullRecord >;
 	sentryUserId?: string;
 	lastSeenVersion?: string;
 	preferredTerminal?: SupportedTerminal;
@@ -49,4 +54,5 @@ export const EMPTY_USER_DATA: UserData = {
 	siteMetadata: {},
 	connectedRemoteSites: [],
 	remoteProviderAccounts: [],
+	providerPullOperations: {},
 };

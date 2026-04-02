@@ -54,6 +54,9 @@ const api: IpcApi = {
 		ipcRendererInvoke( 'listRemoteProviderSites', accountId ),
 	startRemotePull: ( accountId, remoteSiteId ) =>
 		ipcRendererInvoke( 'startRemotePull', accountId, remoteSiteId ),
+	startProviderPullLifecycle: ( input ) =>
+		ipcRendererInvoke( 'startProviderPullLifecycle', input ),
+	getActiveProviderPullLifecycles: () => ipcRendererInvoke( 'getActiveProviderPullLifecycles' ),
 	pollRemotePull: ( accountId, operation ) =>
 		ipcRendererInvoke( 'pollRemotePull', accountId, operation ),
 	downloadRemotePullArtifact: ( accountId, jobId, operationId ) =>
@@ -152,7 +155,7 @@ const api: IpcApi = {
 		ipcRendererInvoke( 'getConnectedWpcomSites', localSiteId ),
 	addSyncOperation: ( id, status ) => ipcRendererSend( 'addSyncOperation', id, status ),
 	clearSyncOperation: ( id ) => ipcRendererSend( 'clearSyncOperation', id ),
-	cancelSyncOperation: ( id ) => ipcRendererSend( 'cancelSyncOperation', id ),
+	cancelSyncOperation: ( id ) => ipcRendererInvoke( 'cancelSyncOperation', id ),
 	pauseSyncUpload: ( selectedSiteId, remoteSiteId ) =>
 		ipcRendererInvoke( 'pauseSyncUpload', selectedSiteId, remoteSiteId ),
 	resumeSyncUpload: ( selectedSiteId, remoteSiteId ) =>

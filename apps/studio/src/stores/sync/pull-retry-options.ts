@@ -1,4 +1,5 @@
-import type { PullSiteOptions, SyncBackupState } from './sync-operations-slice';
+import type { PullSiteOptions } from 'src/modules/sync/types';
+import type { SyncBackupState } from './sync-operations-slice';
 
 export function getPullRetryOptions(
 	pullState: Pick< SyncBackupState, 'pullOptions' > | undefined | null

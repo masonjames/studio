@@ -94,7 +94,7 @@ export default function SelectRemoteProvider( {
 			</Heading>
 			<Text className="text-center text-[15px] font-light text-frame-text-secondary max-w-xl mx-auto">
 				{ __(
-					'Choose from our planned provider integrations. Only providers marked available can complete a pull in Studio today; discovery-only providers stay locked until later phases.'
+					'Choose from our provider integrations. Some providers are fully selectable today, while others expose pull support only for compatibility-validated sites.'
 				) }
 			</Text>
 			<VStack className="w-full items-center" spacing={ 3 }>

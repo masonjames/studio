@@ -30,6 +30,23 @@ export function canCancelPull( key: PullStateProgressInfo[ 'key' ] | undefined )
 }
 
 /**
+ * Check if a pull operation still needs local Studio work to finish.
+ */
+export function pullRequiresLocalCompletion(
+	key: PullStateProgressInfo[ 'key' ] | undefined
+): boolean {
+	const localCompletionStateKeys: PullStateProgressInfo[ 'key' ][] = [
+		'in-progress',
+		'downloading',
+		'importing',
+	];
+	if ( ! key ) {
+		return false;
+	}
+	return localCompletionStateKeys.includes( key );
+}
+
+/**
  * Check if a push operation can be cancelled based on its current state.
  */
 export function canCancelPush( key: PushStateProgressInfo[ 'key' ] | undefined ): boolean {
@@ -60,11 +77,22 @@ export function pushBackupIsUploading( key: PushStateProgressInfo[ 'key' ] | und
 }
 
 export function hasUploadingPushOperations(): boolean {
-	//  Iterate over all the sites and check if any operation is cancelable
+	//  Iterate over all the sites and check if any operation is uploading a push backup
 	let result = false;
 	for ( const [ , state ] of ACTIVE_SYNC_OPERATIONS ) {
 		if ( state && 'key' in state ) {
 			result = result || pushBackupIsUploading( state.key as PushStateProgressInfo[ 'key' ] );
+		}
+	}
+	return result;
+}
+
+export function hasActivePullOperations(): boolean {
+	let result = false;
+	for ( const [ , state ] of ACTIVE_SYNC_OPERATIONS ) {
+		if ( state && 'key' in state ) {
+			result =
+				result || pullRequiresLocalCompletion( state.key as PullStateProgressInfo[ 'key' ] );
 		}
 	}
 	return result;

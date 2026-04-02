@@ -21,7 +21,7 @@ export default function WpRemoteSiteSelector( {
 			copy={ {
 				heading: __( 'Browse WP Remote sites' ),
 				description: __(
-					'Connect a bridge that has validated WP Remote registrations, then browse the discovered sites available to Studio.'
+					'Connect a bridge that has validated WP Remote registrations. Only compatibility-validated sites can be pulled into Studio; incompatible or rollout-disabled sites remain browseable.'
 				),
 				emptyAccounts: __(
 					'Save a bridge account that advertises WP Remote support to browse your bridge-managed registrations.'
@@ -30,7 +30,10 @@ export default function WpRemoteSiteSelector( {
 				editHeading: __( 'Edit WP Remote bridge account' ),
 				labelPlaceholder: __( 'Production WP Remote bridge' ),
 				routeSupportWarning: __(
-					'This bridge can list WP Remote sites, but Studio keeps WP Remote discovery-only until Phase 7 while bridge export verification continues for compatible hosts.'
+					'This bridge can list WP Remote sites, but it does not support the backup/export routes required for pull.'
+				),
+				compatibilityWarning: __(
+					'Only WP Remote sites that pass bridge compatibility validation can be pulled into Studio. Incompatible or rollout-disabled sites remain browseable but unavailable for pull.'
 				),
 			} }
 		/>

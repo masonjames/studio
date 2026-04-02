@@ -8,11 +8,6 @@ export {
 	syncOperationsSelectors,
 	syncOperationsThunks,
 } from './sync-operations-slice';
-export type {
-	SyncBackupState,
-	PullSiteOptions,
-	PullStates,
-	SyncPushState,
-	PushStates,
-} from './sync-operations-slice';
+export type { SyncBackupState, PullStates, SyncPushState, PushStates } from './sync-operations-slice';
+export type { PullSiteOptions } from 'src/modules/sync/types';
 export * from './sync-types';

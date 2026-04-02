@@ -101,7 +101,7 @@ describe( 'bridge client provider contract', () => {
 		] );
 	} );
 
-	it( 'keeps WP Remote non-pullable in Studio even when the bridge advertises pull-ready capabilities', async () => {
+	it( 'maps pull-ready WP Remote sites to syncable Studio sites', async () => {
 		fetchMock
 			.mockResolvedValueOnce(
 				jsonResponse( {
@@ -111,6 +111,10 @@ describe( 'bridge client provider contract', () => {
 						wpRemote: true,
 						flywheel: false,
 						wpEngine: false,
+					},
+					routeSupport: {
+						backupInventory: true,
+						export: true,
 					},
 				} )
 			)
@@ -141,11 +145,120 @@ describe( 'bridge client provider contract', () => {
 				remoteSiteId: 'site-2',
 				provider: 'wpRemote',
 				providerLabel: 'WP Remote',
-				syncSupport: 'unsupported',
+				syncSupport: 'syncable',
+				syncDisabledReason: undefined,
 				capabilities: expect.objectContaining( {
-					pull: false,
+					pull: true,
 					backupCreate: true,
 					backupsRead: true,
+				} ),
+			} ),
+		] );
+	} );
+
+	it( 'preserves bridge notes as the disabled reason for unsupported WP Remote sites', async () => {
+		fetchMock
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					ok: true,
+					providerSupport: {
+						mainwpBridge: true,
+						wpRemote: true,
+						flywheel: false,
+						wpEngine: false,
+					},
+					routeSupport: {
+						backupInventory: true,
+						export: true,
+					},
+				} )
+			)
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					sites: [
+						{
+							id: 'site-3',
+							provider: 'wpRemote',
+							name: 'Incompatible Site',
+							activeUrl: 'https://incompatible.example.com',
+							urls: [ 'https://incompatible.example.com' ],
+							capabilities: {
+								pull: false,
+								backupCreate: false,
+								backupsRead: false,
+							},
+							metadata: {
+								notes:
+									'WP Remote bridge-managed registration. Pull disabled: filesystem canary failed.',
+							},
+						},
+					],
+				} )
+			);
+
+		const result = await listBridgeSites( wpRemoteAccount );
+
+		expect( result.sites ).toEqual( [
+			expect.objectContaining( {
+				id: 'wpRemote:site-3',
+				provider: 'wpRemote',
+				syncSupport: 'unsupported',
+				syncDisabledReason:
+					'WP Remote bridge-managed registration. Pull disabled: filesystem canary failed.',
+				capabilities: expect.objectContaining( {
+					pull: false,
+				} ),
+			} ),
+		] );
+	} );
+
+	it( 'marks bridge sites unsupported when the account lacks pull routes', async () => {
+		fetchMock
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					ok: true,
+					providerSupport: {
+						mainwpBridge: true,
+						wpRemote: true,
+						flywheel: false,
+						wpEngine: false,
+					},
+					routeSupport: {
+						backupInventory: true,
+						export: false,
+					},
+				} )
+			)
+			.mockResolvedValueOnce(
+				jsonResponse( {
+					sites: [
+						{
+							id: 'site-4',
+							provider: 'wpRemote',
+							name: 'Route Limited Site',
+							activeUrl: 'https://route-limited.example.com',
+							urls: [ 'https://route-limited.example.com' ],
+							capabilities: {
+								pull: true,
+								backupCreate: true,
+								backupsRead: true,
+							},
+						},
+					],
+				} )
+			);
+
+		const result = await listBridgeSites( wpRemoteAccount );
+
+		expect( result.sites ).toEqual( [
+			expect.objectContaining( {
+				id: 'wpRemote:site-4',
+				provider: 'wpRemote',
+				syncSupport: 'unsupported',
+				syncDisabledReason:
+					'This bridge can list sites, but it does not support the backup and export routes required for pull.',
+				capabilities: expect.objectContaining( {
+					pull: false,
 				} ),
 			} ),
 		] );
@@ -199,14 +312,14 @@ describe( 'bridge client provider contract', () => {
 		expect( fetchMock ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'rejects site payloads that do not match the selected provider', async () => {
+	it( 'filters site payloads to the selected provider', async () => {
 		fetchMock
 			.mockResolvedValueOnce(
 				jsonResponse( {
 					ok: true,
 					providerSupport: {
 						mainwpBridge: true,
-						wpRemote: false,
+						wpRemote: true,
 						flywheel: false,
 						wpEngine: false,
 					},
@@ -217,8 +330,20 @@ describe( 'bridge client provider contract', () => {
 					sites: [
 						{
 							id: 'site-1',
-							provider: 'flywheel',
-							name: 'Avenue941',
+							provider: 'mainwpBridge',
+							name: 'Avenue941 MainWP',
+							activeUrl: 'https://avenue941.com',
+							urls: [ 'https://avenue941.com' ],
+							capabilities: {
+								pull: true,
+								backupCreate: true,
+								backupsRead: true,
+							},
+						},
+						{
+							id: 'site-2',
+							provider: 'wpRemote',
+							name: 'Avenue941 WP Remote',
 							activeUrl: 'https://avenue941.com',
 							urls: [ 'https://avenue941.com' ],
 							capabilities: {
@@ -231,9 +356,15 @@ describe( 'bridge client provider contract', () => {
 				} )
 			);
 
-		await expect( listBridgeSites( mainwpAccount ) ).rejects.toThrow(
-			'The bridge returned site "site-1" for provider "flywheel" while "mainwpBridge" was expected.'
-		);
+		const result = await listBridgeSites( wpRemoteAccount );
+
+		expect( result.sites ).toHaveLength( 1 );
+		expect( result.sites[ 0 ] ).toMatchObject( {
+			id: 'wpRemote:site-2',
+			remoteSiteId: 'site-2',
+			provider: 'wpRemote',
+			name: 'Avenue941 WP Remote',
+		} );
 	} );
 
 	it( 'keeps MainWP compatibility with older bridge payloads that omit provider', async () => {

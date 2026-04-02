@@ -89,6 +89,7 @@ function createRemoteSite( overrides: Partial< SyncSite > = {} ): SyncSite {
 		isPressable: false,
 		environmentType: null,
 		syncSupport: 'syncable',
+		syncDisabledReason: undefined,
 		capabilities: {
 			pull: true,
 			push: false,
@@ -333,21 +334,88 @@ describe( 'useAddSite', () => {
 		} );
 	} );
 
-	it( 'should keep WP Remote discovery-only until Phase 7 even when the bridge reports pull-ready capabilities', async () => {
+	it( 'allows compatibility-validated WP Remote sites to start a pull', async () => {
+		const remoteSite = createRemoteSite( {
+			id: 'wpRemote:site-1',
+			remoteSiteId: 'site-1',
+			provider: 'wpRemote',
+			providerLabel: 'WP Remote',
+			providerAccountId: 'account-2',
+			capabilities: {
+				pull: true,
+				push: false,
+				backupCreate: true,
+				backupsRead: true,
+				importCreate: false,
+				restoreCreate: false,
+			},
+		} );
+		const createdSite = {
+			id: 'local-wpremote-id',
+			name: 'WP Remote Site',
+			path: '/test/path',
+			wpVersion: 'latest',
+			phpVersion: '8.3',
+		};
+
+		mockCreateSite.mockImplementation(
+			( path, name, version, customDomain, enableHttps, blueprint, phpVersion, callback ) => {
+				callback( createdSite );
+				return Promise.resolve();
+			}
+		);
+
+		const { result } = renderHookWithProvider( () => useAddSite() );
+
+		act( () => {
+			result.current.setSelectedRemoteSite( remoteSite );
+		} );
+
+		const formValues: CreateSiteFormValues = {
+			siteName: createdSite.name,
+			sitePath: createdSite.path,
+			phpVersion: '8.3',
+			wpVersion: 'latest',
+			useCustomDomain: false,
+			customDomain: null,
+			enableHttps: false,
+		};
+
+		await act( async () => {
+			await result.current.handleCreateSite( formValues );
+		} );
+
+		expect( mockConnectRemoteSites ).toHaveBeenCalledWith( [
+			{
+				sites: [ remoteSite ],
+				localSiteId: createdSite.id,
+			},
+		] );
+		expect( mockPullSiteThunk ).toHaveBeenCalledWith( {
+			connectedSite: remoteSite,
+			selectedSite: createdSite,
+			options: { optionsToSync: [ 'all' ] },
+		} );
+		expect( mockSetSelectedTab ).toHaveBeenCalledWith( 'sync' );
+	} );
+
+	it( 'shows the bridge-provided disabled reason for unsupported WP Remote sites', async () => {
 		const { result } = renderHookWithProvider( () => useAddSite() );
 
 		act( () => {
 			result.current.setSelectedRemoteSite(
 				createRemoteSite( {
-					id: 'wpRemote:site-1',
+					id: 'wpRemote:site-2',
 					provider: 'wpRemote',
 					providerLabel: 'WP Remote',
-					syncSupport: 'syncable',
+					syncSupport: 'unsupported',
+					syncDisabledReason:
+						'WP Remote bridge-managed registration. Pull disabled: filesystem canary failed.',
 					capabilities: {
-						pull: true,
+						pull: false,
 						push: false,
-						backupCreate: true,
-						backupsRead: true,
+						backupCreate: false,
+						backupsRead: false,
 						importCreate: false,
 						restoreCreate: false,
 					},
@@ -356,7 +424,7 @@ describe( 'useAddSite', () => {
 		} );
 
 		const formValues: CreateSiteFormValues = {
-			siteName: 'Discovery Only Remote Site',
+			siteName: 'Unsupported WP Remote Site',
 			sitePath: '/test/path',
 			phpVersion: '8.3',
 			wpVersion: 'latest',
@@ -374,7 +442,7 @@ describe( 'useAddSite', () => {
 		expect( mockPullSiteThunk ).not.toHaveBeenCalled();
 		expect( mockShowNotification ).toHaveBeenCalledWith( {
 			title: 'Sync unavailable',
-			body: 'WP Remote site pulls are not available in Studio until Phase 7.',
+			body: 'WP Remote bridge-managed registration. Pull disabled: filesystem canary failed.',
 		} );
 	} );
 } );

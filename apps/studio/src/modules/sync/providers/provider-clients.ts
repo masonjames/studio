@@ -8,7 +8,6 @@ import {
 	testBridgeAccountConnection,
 	type BridgeAccountConnectionResult,
 } from './bridge/client';
-import { assertStudioPullActivatedForProvider } from './pull-activation';
 import { hasRemoteProviderClient, type SupportedRemoteProviderClient } from './supported-providers';
 import type { BridgeHealthResponse } from './bridge/schemas';
 import type {
@@ -21,12 +20,59 @@ import type {
 	TestRemoteProviderAccountInput,
 } from 'src/modules/sync/types';
 
+
+type RecoverableBridgeStartError = Error & {
+	code?: string;
+	activeJobId?: string;
+	activeJobType?: 'backup' | 'export' | 'import' | 'restore';
+};
+
+function recoverLockedBridgeStart(
+	account: RemoteProviderAccount,
+	remoteSiteId: string,
+	error: unknown
+): RemotePullOperation | undefined {
+	const bridgeError = error as RecoverableBridgeStartError;
+	if ( bridgeError?.code !== 'site_job_locked' || ! bridgeError.activeJobId ) {
+		return undefined;
+	}
+
+	if ( bridgeError.activeJobType === 'backup' ) {
+		return {
+			kind: 'bridge',
+			provider: account.provider,
+			providerAccountId: account.id,
+			remoteSiteId,
+			stage: 'backup',
+			backupJobId: bridgeError.activeJobId,
+		};
+	}
+
+	if ( bridgeError.activeJobType === 'export' ) {
+		return {
+			kind: 'bridge',
+			provider: account.provider,
+			providerAccountId: account.id,
+			remoteSiteId,
+			stage: 'export',
+			backupJobId: bridgeError.activeJobId,
+			exportJobId: bridgeError.activeJobId,
+		};
+	}
+
+	return undefined;
+}
+
 export interface RemoteProviderClient {
 	testAccount( input: TestRemoteProviderAccountInput ): Promise< BridgeAccountConnectionResult >;
 	listSites(
 		account: RemoteProviderAccount
 	): Promise< { sites: SyncSite[]; health: BridgeHealthResponse } >;
-	startPull( account: RemoteProviderAccount, remoteSiteId: string ): Promise< RemotePullOperation >;
+	startPull(
+		account: RemoteProviderAccount,
+		remoteSiteId: string,
+		signal?: AbortSignal
+	): Promise< RemotePullOperation >;
 	pollPull(
 		account: RemoteProviderAccount,
 		operation: RemotePullOperation
@@ -34,7 +80,8 @@ export interface RemoteProviderClient {
 	downloadPullArtifact(
 		account: RemoteProviderAccount,
 		jobId: string,
-		operationId: string
+		operationId: string,
+		signal?: AbortSignal
 	): Promise< { filePath: string; sizeBytes?: number } >;
 }
 
@@ -51,21 +98,27 @@ function getBridgeRunningProgress( stage: BridgePullOperation[ 'stage' ], percen
 const sharedBridgeClient: RemoteProviderClient = {
 	testAccount: testBridgeAccountConnection,
 	listSites: listBridgeSites,
-	async startPull( account, remoteSiteId ) {
-		assertStudioPullActivatedForProvider( account.provider );
-		const backupJob = await createBridgeBackupJob( account, remoteSiteId );
+	async startPull( account, remoteSiteId, signal ) {
+		try {
+			const backupJob = await createBridgeBackupJob( account, remoteSiteId, signal );
 
-		return {
-			kind: 'bridge',
-			provider: account.provider,
-			providerAccountId: account.id,
-			remoteSiteId,
-			stage: 'backup',
-			backupJobId: backupJob.id,
-		};
+			return {
+				kind: 'bridge',
+				provider: account.provider,
+				providerAccountId: account.id,
+				remoteSiteId,
+				stage: 'backup',
+				backupJobId: backupJob.id,
+			};
+		} catch ( error ) {
+			const recoveredOperation = recoverLockedBridgeStart( account, remoteSiteId, error );
+			if ( recoveredOperation ) {
+				return recoveredOperation;
+			}
+			throw error;
+		}
 	},
 	async pollPull( account, operation ) {
-		assertStudioPullActivatedForProvider( account.provider );
 		if ( operation.kind !== 'bridge' ) {
 			throw new Error( 'Unsupported remote pull operation.' );
 		}
@@ -186,9 +239,8 @@ const sharedBridgeClient: RemoteProviderClient = {
 			artifactSizeBytes: exportJob.artifact?.sizeBytes,
 		};
 	},
-	async downloadPullArtifact( account, jobId, operationId ) {
-		assertStudioPullActivatedForProvider( account.provider );
-		return downloadBridgeJobArtifact( account, jobId, operationId );
+	async downloadPullArtifact( account, jobId, operationId, signal ) {
+		return downloadBridgeJobArtifact( account, jobId, operationId, signal );
 	},
 };
 

@@ -6,6 +6,7 @@ import { PreviewCommandLoggerAction } from '@studio/common/logger-actions';
 import { ImportExportEventData } from 'src/lib/import-export/handle-events';
 import { StoredAuthToken } from 'src/lib/oauth';
 import { getMainWindow } from 'src/main-window';
+import type { ProviderPullLifecycleSnapshot } from 'src/modules/sync/types';
 import type { UserData } from 'src/storage/storage-types';
 
 type SnapshotEventData = {
@@ -62,6 +63,7 @@ export interface IpcEvents {
 	'user-preference-changed': [ void ];
 	'user-data-updated': [ UserData ];
 	'user-data-error': [ string ];
+	'provider-pull-state-changed': [ ProviderPullLifecycleSnapshot ];
 	'refresh-app-globals': [ void ];
 	'beta-features-updated': [ void ];
 }

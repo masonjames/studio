@@ -40,10 +40,8 @@ export default function App() {
 
 	// Initialize sync states from in-progress server operations
 	useEffect( () => {
-		if ( client ) {
-			void dispatch( syncOperationsThunks.initializeSyncStates() );
-		}
-	}, [ client, dispatch ] );
+		void dispatch( syncOperationsThunks.initializeSyncStates() );
+	}, [ dispatch ] );
 
 	useListenDeepLinkConnection();
 

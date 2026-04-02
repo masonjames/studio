@@ -24,6 +24,7 @@ import {
 import { IPC_VOID_HANDLERS } from 'src/constants';
 import * as ipcHandlers from 'src/ipc-handlers';
 import {
+	hasActivePullOperations,
 	hasActiveSyncOperations,
 	hasUploadingPushOperations,
 } from 'src/lib/active-sync-operations';
@@ -46,6 +47,7 @@ import {
 } from 'src/modules/cli/lib/cli-events-subscriber';
 import { isStudioCliInstalled } from 'src/modules/cli/lib/ipc-handlers';
 import { updateWindowsCliVersionedPathIfNeeded } from 'src/modules/cli/lib/windows-installation-manager';
+import { providerPullManager } from 'src/modules/sync/providers/provider-pull-manager';
 import { getRunningSiteCount, SiteServer, stopAllServers } from 'src/site-server';
 import {
 	loadUserData,
@@ -311,6 +313,7 @@ async function appBoot() {
 		// so sites must be loaded first.
 		await SiteServer.fetchAll();
 		await startCliEventsSubscriber();
+		await providerPullManager.initialize();
 
 		await startUserDataWatcher();
 
@@ -368,23 +371,32 @@ async function appBoot() {
 		if ( hasActiveSyncOperations() ) {
 			const QUIT_APP_BUTTON_INDEX = 0;
 			const CANCEL_BUTTON_INDEX = 1;
+			const hasActivePull = hasActivePullOperations();
 
 			const messageInformation: Pick< MessageBoxSyncOptions, 'message' | 'detail' | 'type' > =
-				hasUploadingPushOperations()
+				hasActivePull
 					? {
-							message: __( 'Sync is in progress' ),
+							message: __( 'Pull is in progress' ),
 							detail: __(
-								"There's a sync operation in progress. Quitting the app will abort that operation. Are you sure you want to quit?"
+								'Quitting Studio now will interrupt this pull. The remote backup or export may continue, but Studio will stop polling and your local site will not finish importing automatically. Are you sure you want to quit?'
 							),
 							type: 'warning',
 					  }
-					: {
-							message: __( 'Sync will continue' ),
-							detail: __(
-								'The sync process will continue running remotely after you quit Studio.'
-							),
-							type: 'info',
-					  };
+					: hasUploadingPushOperations()
+						? {
+								message: __( 'Sync is in progress' ),
+								detail: __(
+									"There's a sync operation in progress. Quitting the app will abort that operation. Are you sure you want to quit?"
+								),
+								type: 'warning',
+						  }
+						: {
+								message: __( 'Sync will continue' ),
+								detail: __(
+									'The remote sync process can continue running after you quit Studio.'
+								),
+								type: 'info',
+						  };
 
 			const clickedButtonIndex = dialog.showMessageBoxSync( {
 				message: messageInformation.message,
@@ -392,7 +404,7 @@ async function appBoot() {
 				type: messageInformation.type,
 				buttons: [ __( 'Yes, quit the app' ), __( 'No, take me back' ) ],
 				cancelId: CANCEL_BUTTON_INDEX,
-				defaultId: QUIT_APP_BUTTON_INDEX,
+				defaultId: hasActivePull ? CANCEL_BUTTON_INDEX : QUIT_APP_BUTTON_INDEX,
 			} );
 
 			if ( clickedButtonIndex === CANCEL_BUTTON_INDEX ) {
@@ -465,6 +477,7 @@ async function appBoot() {
 		globalShortcut.unregisterAll();
 		stopUserDataWatcher();
 		stopCliEventsSubscriber();
+		void providerPullManager.shutdown();
 
 		if ( shouldStopSitesOnQuit ) {
 			event.preventDefault();

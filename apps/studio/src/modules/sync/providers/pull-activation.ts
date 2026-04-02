@@ -1,49 +1,62 @@
 import type { RemoteProvider, SyncSite } from 'src/modules/sync/types';
 
-const STUDIO_PULL_ACTIVATION_MESSAGES: Partial< Record< RemoteProvider, string > > = {
-	wpRemote: 'WP Remote site pulls are not available in Studio until Phase 7.',
+const WP_REMOTE_PULL_DISABLED_FALLBACK =
+	'Only WP Remote sites that pass bridge compatibility validation can be pulled into Studio.';
+const GENERIC_PULL_DISABLED_FALLBACK = 'This remote site cannot be pulled into Studio yet.';
+
+type PullAvailabilityInput = {
+	provider: RemoteProvider | undefined | null;
+	providerCanPull: boolean;
+	disabledReason?: string | null;
 };
 
-export function getStudioPullActivationMessage(
-	provider: RemoteProvider | undefined | null
-): string | undefined {
-	if ( ! provider ) {
-		return undefined;
+function resolveStudioPullDisabledReason(
+	provider: RemoteProvider | undefined | null,
+	disabledReason?: string | null
+): string {
+	if ( disabledReason?.trim() ) {
+		return disabledReason.trim();
 	}
 
-	return STUDIO_PULL_ACTIVATION_MESSAGES[ provider ];
+	if ( provider === 'wpRemote' ) {
+		return WP_REMOTE_PULL_DISABLED_FALLBACK;
+	}
+
+	return GENERIC_PULL_DISABLED_FALLBACK;
 }
 
-export function isStudioPullActivatedForProvider(
-	provider: RemoteProvider | undefined | null
-): boolean {
-	return ! getStudioPullActivationMessage( provider );
+export function resolveStudioPullAvailability( {
+	provider,
+	providerCanPull,
+	disabledReason,
+}: PullAvailabilityInput ) {
+	if ( providerCanPull ) {
+		return {
+			canPull: true,
+			disabledReason: undefined,
+		};
+	}
+
+	return {
+		canPull: false,
+		disabledReason: resolveStudioPullDisabledReason( provider, disabledReason ),
+	};
 }
 
-export function getStudioPullCapability(
-	provider: RemoteProvider | undefined | null,
-	providerCanPull: boolean
-): boolean {
-	return providerCanPull && isStudioPullActivatedForProvider( provider );
+export function getStudioPullDisabledMessage(
+	site: Pick< SyncSite, 'provider' | 'syncDisabledReason' > | undefined | null
+): string {
+	return resolveStudioPullDisabledReason( site?.provider, site?.syncDisabledReason );
 }
 
 export function canStudioPullSite(
-	site: Pick< SyncSite, 'provider' | 'capabilities' > | undefined | null
+	site: Pick< SyncSite, 'capabilities' > | undefined | null
 ): boolean {
-	return Boolean( site && getStudioPullCapability( site.provider, site.capabilities.pull ) );
+	return Boolean( site?.capabilities.pull );
 }
 
 export function canStudioCreateSiteFromRemotePull(
-	site: Pick< SyncSite, 'provider' | 'syncSupport' | 'capabilities' > | undefined | null
+	site: Pick< SyncSite, 'syncSupport' | 'capabilities' > | undefined | null
 ): boolean {
 	return Boolean( site && site.syncSupport === 'syncable' && canStudioPullSite( site ) );
-}
-
-export function assertStudioPullActivatedForProvider(
-	provider: RemoteProvider | undefined | null
-): void {
-	const message = getStudioPullActivationMessage( provider );
-	if ( message ) {
-		throw new Error( message );
-	}
 }

@@ -69,6 +69,7 @@ const mockExternalRemoteSite = {
 	isPressable: false,
 	environmentType: null,
 	syncSupport: 'syncable',
+	syncDisabledReason: undefined,
 	capabilities: {
 		pull: true,
 		push: false,
@@ -79,6 +80,48 @@ const mockExternalRemoteSite = {
 	},
 	lastPullTimestamp: null,
 	lastPushTimestamp: null,
+};
+
+const mockWpRemotePullableSite = {
+	id: 'wpRemote:site-456',
+	remoteSiteId: 'site-456',
+	provider: 'wpRemote',
+	providerLabel: 'WP Remote',
+	providerAccountId: 'account-456',
+	localSiteId: '',
+	name: 'Compatible WP Remote Site',
+	url: 'https://compatible.example.com',
+	isStaging: false,
+	isPressable: false,
+	environmentType: null,
+	syncSupport: 'syncable',
+	syncDisabledReason: undefined,
+	capabilities: {
+		pull: true,
+		push: false,
+		backupCreate: true,
+		backupsRead: true,
+		importCreate: false,
+		restoreCreate: false,
+	},
+	lastPullTimestamp: null,
+	lastPushTimestamp: null,
+};
+
+const mockWpRemoteUnsupportedSite = {
+	...mockWpRemotePullableSite,
+	id: 'wpRemote:site-789',
+	remoteSiteId: 'site-789',
+	name: 'Unsupported WP Remote Site',
+	syncSupport: 'unsupported',
+	syncDisabledReason:
+		'WP Remote bridge-managed registration. Pull disabled: filesystem canary failed.',
+	capabilities: {
+		...mockWpRemotePullableSite.capabilities,
+		pull: false,
+		backupCreate: false,
+		backupsRead: false,
+	},
 };
 
 vi.mock( 'src/lib/get-ipc-api', () => ( {
@@ -124,6 +167,30 @@ vi.mock( 'src/modules/sync/providers/mainwp-bridge/site-selector', () => ( {
 			<div>MainWP provider site selector</div>
 			<button type="button" onClick={ () => setSelectedRemoteSite( mockExternalRemoteSite ) }>
 				Select mocked MainWP site
+			</button>
+			{ selectedRemoteSite?.name && <div>{ selectedRemoteSite.name }</div> }
+		</div>
+	),
+} ) );
+
+vi.mock( 'src/modules/sync/providers/wpremote/site-selector', () => ( {
+	__esModule: true,
+	default: ( {
+		selectedRemoteSite,
+		setSelectedRemoteSite,
+	}: {
+		selectedRemoteSite?: typeof mockWpRemotePullableSite | typeof mockWpRemoteUnsupportedSite;
+		setSelectedRemoteSite: (
+			site?: typeof mockWpRemotePullableSite | typeof mockWpRemoteUnsupportedSite
+		) => void;
+	} ) => (
+		<div>
+			<div>WP Remote provider site selector</div>
+			<button type="button" onClick={ () => setSelectedRemoteSite( mockWpRemoteUnsupportedSite ) }>
+				Select mocked unsupported WP Remote site
+			</button>
+			<button type="button" onClick={ () => setSelectedRemoteSite( mockWpRemotePullableSite ) }>
+				Select mocked pullable WP Remote site
 			</button>
 			{ selectedRemoteSite?.name && <div>{ selectedRemoteSite.name }</div> }
 		</div>
@@ -670,7 +737,7 @@ describe( 'AddSite', () => {
 		} );
 	} );
 
-	it( 'shows the new external provider lineup with WP Remote discovery-only until Phase 7', async () => {
+	it( 'shows the external provider lineup with WP Remote selectable for site-level validation', async () => {
 		const user = userEvent.setup();
 		renderWithProvider( <AddSite /> );
 
@@ -696,7 +763,7 @@ describe( 'AddSite', () => {
 			);
 
 		expect( providerButtons ).toEqual( [ 'WP Remote', 'MainWP', 'Flywheel', 'WP Engine' ] );
-		expect( wpRemoteButton ).toBeDisabled();
+		expect( wpRemoteButton ).toBeEnabled();
 		expect( mainwpButton ).toBeEnabled();
 		expect( flywheelButton ).toBeDisabled();
 		expect( wpEngineButton ).toBeDisabled();
@@ -704,8 +771,48 @@ describe( 'AddSite', () => {
 		expect( screen.queryByRole( 'button', { name: /DigitalOcean/i } ) ).not.toBeInTheDocument();
 
 		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
-		await user.click( mainwpButton );
+		await user.click( wpRemoteButton );
 		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
+	} );
+
+	it( 'keeps WP Remote site selection disabled until a pullable site is chosen', async () => {
+		const user = userEvent.setup();
+		mockGenerateProposedSitePath.mockImplementation( async ( siteName: string ) => ( {
+			path: `/default_path/${ siteName }`,
+			name: siteName,
+			isEmpty: true,
+			isWordPress: false,
+		} ) );
+		renderWithProvider( <AddSite /> );
+
+		await user.click( screen.getByRole( 'button', { name: 'Add site' } ) );
+		await user.click( screen.getByRole( 'button', { name: /Pull from another host/i } ) );
+		await user.click( screen.getByRole( 'button', { name: /WP Remote/i } ) );
+		await user.click( screen.getByTestId( 'stepper-action-button' ) );
+
+		expect( screen.getByText( 'WP Remote provider site selector' ) ).toBeVisible();
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
+
+		await user.click(
+			screen.getByRole( 'button', { name: 'Select mocked unsupported WP Remote site' } )
+		);
+		expect( screen.getByText( 'Unsupported WP Remote Site' ) ).toBeVisible();
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeDisabled();
+
+		await user.click(
+			screen.getByRole( 'button', { name: 'Select mocked pullable WP Remote site' } )
+		);
+		expect( screen.getByText( 'Compatible WP Remote Site' ) ).toBeVisible();
+		expect( screen.getByTestId( 'stepper-action-button' ) ).toBeEnabled();
+
+		await user.click( screen.getByTestId( 'stepper-action-button' ) );
+
+		await waitFor( () => {
+			expect( screen.getByTestId( 'site-name-input' ) ).toHaveValue( 'Compatible WP Remote Site' );
+			expect( screen.getByTestId( 'local-path-input' ) ).toHaveValue(
+				'/default_path/Compatible WP Remote Site'
+			);
+		} );
 	} );
 
 	it( 'navigates through the external provider pull flow and prefills the site name', async () => {

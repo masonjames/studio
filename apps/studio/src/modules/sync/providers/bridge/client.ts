@@ -4,7 +4,7 @@ import nodePath from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { getSyncBackupTempPath } from 'src/lib/get-sync-backup-temp-path';
-import { getStudioPullCapability } from 'src/modules/sync/providers/pull-activation';
+import { resolveStudioPullAvailability } from 'src/modules/sync/providers/pull-activation';
 import { getExternalRemoteProvider } from 'src/modules/sync/providers/registry';
 import {
 	buildRemoteSiteKey,
@@ -22,6 +22,14 @@ import {
 	type BridgeJob,
 	type PublicBridgeSite,
 } from './schemas';
+
+export type BridgeRequestError = Error & {
+	code?: string;
+	status?: number;
+	siteId?: string;
+	activeJobId?: string;
+	activeJobType?: 'backup' | 'export' | 'import' | 'restore';
+};
 
 export type BridgeAccountConnectionResult = {
 	normalized: ReturnType< typeof normalizeBridgeAccountInput >;
@@ -108,15 +116,32 @@ async function requestJson< T >(
 			typeof parsed.message === 'string'
 				? parsed.message
 				: `Bridge request failed with status ${ response.status }.`;
-		const error = new Error( message );
-		( error as Error & { code?: string; status?: number } ).status = response.status;
+		const error: BridgeRequestError = new Error( message );
+		error.status = response.status;
 		if (
 			typeof parsed === 'object' &&
 			parsed &&
 			'error' in parsed &&
 			typeof parsed.error === 'string'
 		) {
-			( error as Error & { code?: string } ).code = parsed.error;
+			error.code = parsed.error;
+		}
+		if ( typeof parsed === 'object' && parsed ) {
+			if ( 'siteId' in parsed && typeof parsed.siteId === 'string' ) {
+				error.siteId = parsed.siteId;
+			}
+			if ( 'activeJobId' in parsed && typeof parsed.activeJobId === 'string' ) {
+				error.activeJobId = parsed.activeJobId;
+			}
+			if (
+				'activeJobType' in parsed &&
+				( parsed.activeJobType === 'backup' ||
+					parsed.activeJobType === 'export' ||
+					parsed.activeJobType === 'import' ||
+					parsed.activeJobType === 'restore' )
+			) {
+				error.activeJobType = parsed.activeJobType;
+			}
 		}
 		throw error;
 	}
@@ -151,8 +176,19 @@ function assertBackupsMatchSite( backups: BridgeBackupManifest[], expectedSiteId
 	} );
 }
 
+const BRIDGE_PULL_ROUTE_DISABLED_MESSAGE =
+	'This bridge can list sites, but it does not support the backup and export routes required for pull.';
+
 function getProviderLabel( provider: RemoteProviderAccount[ 'provider' ] ) {
 	return getExternalRemoteProvider( provider )?.providerLabel ?? provider;
+}
+
+function bridgeRoutesAllowPull( health: BridgeHealthResponse ) {
+	if ( ! health.routeSupport ) {
+		return true;
+	}
+
+	return Boolean( health.routeSupport.backupInventory && health.routeSupport.export );
 }
 
 function assertBridgeSupportsProvider(
@@ -188,7 +224,22 @@ function resolveBridgeSiteProvider( account: RemoteProviderAccount, site: Public
 	);
 }
 
-function toSyncSite( account: RemoteProviderAccount, site: PublicBridgeSite ): SyncSite {
+function bridgeSiteBelongsToAccount(
+	account: RemoteProviderAccount,
+	site: PublicBridgeSite
+): boolean {
+	if ( site.provider ) {
+		return site.provider === account.provider;
+	}
+
+	return account.provider === 'mainwpBridge';
+}
+
+function toSyncSite(
+	account: RemoteProviderAccount,
+	site: PublicBridgeSite,
+	health: BridgeHealthResponse
+): SyncSite {
 	const siteProvider = resolveBridgeSiteProvider( account, site );
 	if ( siteProvider !== account.provider ) {
 		throw new Error(
@@ -196,12 +247,19 @@ function toSyncSite( account: RemoteProviderAccount, site: PublicBridgeSite ): S
 		);
 	}
 
+	const routeSupportAllowsPull = bridgeRoutesAllowPull( health );
 	const bridgeCanPull = Boolean(
 		site.capabilities.pull &&
 			site.capabilities.backupCreate !== false &&
 			site.capabilities.backupsRead !== false
 	);
-	const canPull = getStudioPullCapability( siteProvider, bridgeCanPull );
+	const pullAvailability = resolveStudioPullAvailability( {
+		provider: siteProvider,
+		providerCanPull: bridgeCanPull && routeSupportAllowsPull,
+		disabledReason:
+			site.metadata?.notes ??
+			( routeSupportAllowsPull ? undefined : BRIDGE_PULL_ROUTE_DISABLED_MESSAGE ),
+	} );
 
 	return {
 		id: buildRemoteSiteKey( siteProvider, site.id ),
@@ -215,9 +273,10 @@ function toSyncSite( account: RemoteProviderAccount, site: PublicBridgeSite ): S
 		isStaging: false,
 		isPressable: false,
 		environmentType: null,
-		syncSupport: canPull ? 'syncable' : 'unsupported',
+		syncSupport: pullAvailability.canPull ? 'syncable' : 'unsupported',
+		syncDisabledReason: pullAvailability.disabledReason,
 		capabilities: {
-			pull: canPull,
+			pull: pullAvailability.canPull,
 			push: false,
 			backupCreate: site.capabilities.backupCreate,
 			backupsRead: site.capabilities.backupsRead,
@@ -263,14 +322,26 @@ export async function listBridgeSites(
 	);
 	return {
 		health,
-		sites: response.sites.map( ( site ) => toSyncSite( account, site ) ),
+		sites: response.sites
+			.filter( ( site ) => bridgeSiteBelongsToAccount( account, site ) )
+			.map( ( site ) => toSyncSite( account, site, health ) ),
 	};
 }
 
-export async function createBridgeBackupJob( account: RemoteProviderAccount, siteId: string ) {
+export async function createBridgeBackupJob(
+	account: RemoteProviderAccount,
+	siteId: string,
+	signal?: AbortSignal
+) {
 	const response = await requestJson(
 		account,
-		{ path: `/v1/sites/${ siteId }/backup`, method: 'POST', token: 'mutate', body: {} },
+		{
+			path: `/v1/sites/${ siteId }/backup`,
+			method: 'POST',
+			token: 'mutate',
+			body: {},
+			signal,
+		},
 		bridgeJobResponseSchema
 	);
 	assertJobMatchesSite( response.job, siteId );

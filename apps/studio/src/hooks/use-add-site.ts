@@ -12,7 +12,7 @@ import { useSiteDetails } from 'src/hooks/use-site-details';
 import { getIpcApi } from 'src/lib/get-ipc-api';
 import {
 	canStudioCreateSiteFromRemotePull,
-	getStudioPullActivationMessage,
+	getStudioPullDisabledMessage,
 } from 'src/modules/sync/providers/pull-activation';
 import { useAppDispatch } from 'src/stores';
 import { syncOperationsThunks } from 'src/stores/sync';
@@ -244,9 +244,7 @@ export function useAddSite() {
 				if ( selectedRemoteSite && ! canStudioCreateSiteFromRemotePull( selectedRemoteSite ) ) {
 					getIpcApi().showNotification( {
 						title: __( 'Sync unavailable' ),
-						body:
-							getStudioPullActivationMessage( selectedRemoteSite.provider ) ??
-							__( 'This remote site cannot be pulled into Studio yet.' ),
+						body: getStudioPullDisabledMessage( selectedRemoteSite ),
 					} );
 					return;
 				}

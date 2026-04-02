@@ -1,3 +1,6 @@
+import type { PullStateProgressInfo } from 'src/hooks/use-sync-states-progress-info';
+import type { SyncOption } from 'src/types';
+
 export type RawDirectoryEntry = {
 	name: string;
 	isDirectory: boolean;
@@ -44,6 +47,7 @@ export type SyncSite = {
 	isPressable: boolean;
 	environmentType?: string | null;
 	syncSupport: SyncSupport;
+	syncDisabledReason?: string;
 	capabilities: RemoteSiteCapabilities;
 	lastPullTimestamp: string | null;
 	lastPushTimestamp: string | null;
@@ -118,21 +122,71 @@ export type RemotePullUpdate =
 			operation: RemotePullOperation;
 			progress: number;
 			message: string;
-	  }
+		}
 	| {
 			kind: 'artifact-ready';
 			operation: RemotePullOperation;
 			progress: number;
 			message: string;
 			artifactSizeBytes?: number;
-	  }
+		}
 	| {
 			kind: 'failed';
 			operation: RemotePullOperation;
 			message: string;
 			errorCode?: string;
 			retryable?: boolean;
-	  };
+		};
+
+export type PullSiteOptions = {
+	optionsToSync: SyncOption[];
+	include_path_list?: string[];
+};
+
+export type ProviderPullLifecyclePhase =
+	| 'startingRemotePull'
+	| 'pollingRemotePull'
+	| 'downloadingArtifact'
+	| 'importingBackup';
+
+export type PersistedProviderPullRecord = {
+	id: string;
+	localSiteId: string;
+	connectedSiteId: string;
+	remoteSiteId: string;
+	provider: BridgeBackedRemoteProvider;
+	providerAccountId: string;
+	remoteSiteName: string;
+	remoteSiteUrl: string;
+	localSiteName: string;
+	pullOptions: PullSiteOptions;
+	phase: ProviderPullLifecyclePhase;
+	providerOperation?: RemotePullOperation;
+	downloadFilePath?: string;
+	artifactSizeBytes?: number;
+	progress: PullStateProgressInfo;
+	sequence: number;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type ProviderPullLifecycleSnapshot = {
+	operationId: string;
+	selectedSiteId: string;
+	remoteSiteId: string;
+	executionModel: 'main';
+	sequence: number;
+	selectedSite: SiteDetails;
+	remoteSiteUrl: string;
+	providerOperation?: RemotePullOperation;
+	pullOptions: PullSiteOptions;
+	status: PullStateProgressInfo;
+};
+
+export type CancelSyncOperationResult = {
+	accepted: boolean;
+	message?: string;
+};
 
 export const buildRemoteSiteKey = ( provider: RemoteProvider, remoteSiteId: string ): string =>
 	`${ provider }:${ remoteSiteId }`;

@@ -155,9 +155,11 @@ export {
 export {
 	deleteRemoteProviderAccount,
 	downloadRemotePullArtifact,
+	getActiveProviderPullLifecycles,
 	listRemoteProviderAccounts,
 	listRemoteProviderSites,
 	pollRemotePull,
+	startProviderPullLifecycle,
 	startRemotePull,
 	testRemoteProviderAccount,
 	upsertRemoteProviderAccount,

@@ -113,10 +113,18 @@ The chooser should support this order:
 3. `flywheel`
 4. `wpEngine`
 
-For the shipped Studio picker through Phase 6:
+Before Phase 7 implementation landed:
 
-- `mainwpBridge` is the only `available` provider,
-- `wpRemote` remains `discovery` until Phase 7 pull activation,
+- `mainwpBridge` was the only `available` provider,
+- `wpRemote` remained `discovery` until Phase 7 pull activation,
+- `flywheel` and `wpEngine` remained discovery entries.
+
+Current code state as of 2026-04-02:
+
+- `mainwpBridge` remains `available`,
+- `wpRemote` is now `available` in the top-level picker,
+- only compatibility-validated WP Remote sites are pullable,
+- incompatible or rollout-disabled WP Remote sites stay visible but unsupported with a concrete disabled reason,
 - `flywheel` and `wpEngine` remain discovery entries.
 
 ### Provider availability model
@@ -133,7 +141,7 @@ This lets the same chooser render:
 - discovery entries,
 - temporarily disabled providers.
 
-For the current rollout, WP Remote should use the **discovery** state in the top-level picker while pull activation remains Phase 7-gated, even though bridge-side export is now validated for compatible hosts.
+That discovery-only picker state was the correct Phase 6 posture. As of 2026-04-02, the Phase 7 code path now makes WP Remote selectable in the top-level picker while keeping pull site-gated to compatibility-validated registrations.
 
 ### Provider definition shape
 
@@ -442,8 +450,8 @@ Ship the first real WP Remote runtime slice:
 - bridge-side connection-key bootstrap and runtime credential persistence,
 - bridge-side callback signing and validation transport,
 - bridge-side validated site registration and `/v1/sites` exposure,
-- Studio runtime guards that keep WP Remote non-pullable in this phase,
-- shipped picker gating that keeps WP Remote discovery-only at the top level until Phase 7,
+- Studio runtime guards that kept WP Remote non-pullable in Phase 5,
+- shipped picker gating that kept WP Remote discovery-only through Phase 6,
 - manual verification against a real Flywheel-hosted Avenue941 WP Remote site.
 
 ### Exit criteria
@@ -482,10 +490,11 @@ For WP Remote, that means:
 
 - `runBackup()` creates a **bridge-owned staged snapshot** under the backup directory,
 - `runExport()` packages that staged snapshot into the normal tar.gz artifact,
-- for rollout-enabled, compatibility-validated WP Remote sites, the bridge may advertise:
+- in Phase 6, rollout-enabled, compatibility-validated WP Remote sites advertised:
   - `backupCreate: true`
   - `backupsRead: true`
   - `pull: false`
+- as of 2026-04-02, Phase 7 code now projects `pull: true` for those same compatibility-validated sites and keeps incompatible sites non-pullable.
 
 ### Compatibility finding - 2026-04-01
 
@@ -526,11 +535,17 @@ The following were verified on 2026-04-01 against the compatible Avenue941 fixtu
 
 ### Remaining work after Phase 6
 
-The remaining WP Remote work now moves to Phase 7:
+Phase 7 implementation is now in progress in repo code as of 2026-04-02:
 
-- project pull capability only for compatibility-validated sites,
-- relax the current Studio guard only for those sites,
-- validate the end-to-end selectable Studio pull flow without regressing the current discovery-only shipped picker semantics until activation is deliberate.
+- bridge-side pull capability projection is implemented for compatibility-validated sites,
+- Studio now trusts per-site pullability instead of a provider-wide WP Remote block,
+- the top-level picker now allows WP Remote selection while site-level gating remains intact.
+
+The remaining work is operational validation:
+
+- validate the end-to-end selectable Studio pull flow on a compatible fixture,
+- confirm unsupported WP Remote runtimes still surface actionable messaging in real workflows,
+- verify MainWP regression safety in the full shipped app flow.
 
 ### Out of scope
 
@@ -546,11 +561,15 @@ The remaining WP Remote work now moves to Phase 7:
 
 Enable WP Remote pull in Studio only after the bridge export artifact has been validated and the site passes runtime compatibility checks.
 
-### Expected changes
+### Implemented code changes as of 2026-04-02
 
-- add bridge-side compatibility signals for validated WP Remote sites,
-- relax the current WP Remote runtime guards in Studio only for compatibility-validated sites,
-- keep export-capable-but-incompatible runtimes discovery-only,
+- bridge-side compatibility signals now drive per-site `pull` capability for validated WP Remote sites,
+- Studio no longer uses a provider-wide WP Remote pull block,
+- export-capable-but-incompatible runtimes remain unsupported with concrete disabled reasons,
+- the top-level picker now allows WP Remote selection while site-level gating decides whether pull can continue.
+
+### Remaining validation work
+
 - validate end-to-end add-site pull/import behavior on a compatible fixture.
 
 ### Exit criteria

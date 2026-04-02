@@ -10,10 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Button from 'src/components/button';
 import { getIpcApi } from 'src/lib/get-ipc-api';
 import { SitesListContent } from 'src/modules/sync/components/sync-sites-modal-selector';
-import {
-	getStudioPullActivationMessage,
-	getStudioPullCapability,
-} from 'src/modules/sync/providers/pull-activation';
+import { getStudioPullDisabledMessage } from 'src/modules/sync/providers/pull-activation';
 import BridgeAccountForm, {
 	bridgeAccountToFormValues,
 	createDefaultBridgeAccountFormValues,
@@ -35,6 +32,7 @@ export type BridgeProviderSiteSelectorCopy = {
 	editHeading: string;
 	labelPlaceholder: string;
 	routeSupportWarning: string;
+	compatibilityWarning?: string;
 };
 
 interface BridgeSiteSelectorProps {
@@ -51,7 +49,6 @@ export default function BridgeSiteSelector( {
 	copy,
 }: BridgeSiteSelectorProps ) {
 	const { __ } = useI18n();
-	const pullActivationMessage = getStudioPullActivationMessage( provider );
 	const [ accounts, setAccounts ] = useState< RemoteProviderAccount[] >( [] );
 	const [ selectedAccountId, setSelectedAccountId ] = useState< string | undefined >();
 	const [ sites, setSites ] = useState< SyncSite[] >( [] );
@@ -69,6 +66,30 @@ export default function BridgeSiteSelector( {
 	const selectedAccount = useMemo(
 		() => accounts.find( ( account ) => account.id === selectedAccountId ),
 		[ accounts, selectedAccountId ]
+	);
+	const routeSupportAllowsPull = useMemo(
+		() => ! routeSupport || Boolean( routeSupport.backupInventory && routeSupport.export ),
+		[ routeSupport ]
+	);
+	const selectedSiteWarning = useMemo( () => {
+		if ( ! selectedRemoteSite || selectedRemoteSite.providerAccountId !== selectedAccountId ) {
+			return undefined;
+		}
+
+		if ( selectedRemoteSite.syncSupport === 'syncable' ) {
+			return undefined;
+		}
+
+		return getStudioPullDisabledMessage( selectedRemoteSite );
+	}, [ selectedAccountId, selectedRemoteSite ] );
+	const showCompatibilityWarning = useMemo(
+		() =>
+			Boolean(
+				copy.compatibilityWarning &&
+					routeSupportAllowsPull &&
+					sites.some( ( site ) => site.syncSupport !== 'syncable' )
+			),
+		[ copy.compatibilityWarning, routeSupportAllowsPull, sites ]
 	);
 
 	const loadAccounts = useCallback( async () => {
@@ -108,32 +129,13 @@ export default function BridgeSiteSelector( {
 				}
 
 				setRouteSupport( result.routeSupport );
-				const routeSupportAllowsPull = Boolean(
-					result.routeSupport?.backupInventory && result.routeSupport?.export
+				setSites( result.sites );
+				const nextSelectedSite = result.sites.find(
+					( site ) => site.id === selectedRemoteSite?.id
 				);
-				const normalizedSites = result.sites.map( ( site ) => ( {
-					...site,
-					providerAccountId: selectedAccountId,
-					capabilities: {
-						...site.capabilities,
-						pull: getStudioPullCapability(
-							provider,
-							site.capabilities.pull && routeSupportAllowsPull
-						),
-						push: false,
-					},
-					syncSupport: getStudioPullCapability(
-						provider,
-						site.capabilities.pull && routeSupportAllowsPull
-					)
-						? site.syncSupport
-						: 'unsupported',
-				} ) );
-				setSites( normalizedSites );
-				if (
-					selectedRemoteSite?.providerAccountId !== selectedAccountId ||
-					! normalizedSites.some( ( site ) => site.id === selectedRemoteSite?.id )
-				) {
+				if ( nextSelectedSite ) {
+					setSelectedRemoteSite( nextSelectedSite );
+				} else {
 					setSelectedRemoteSite( undefined );
 				}
 			} catch ( error ) {
@@ -153,14 +155,7 @@ export default function BridgeSiteSelector( {
 		return () => {
 			cancelled = true;
 		};
-	}, [
-		__,
-		provider,
-		selectedAccountId,
-		selectedRemoteSite?.id,
-		selectedRemoteSite?.providerAccountId,
-		setSelectedRemoteSite,
-	] );
+	}, [ __, selectedAccountId, selectedRemoteSite?.id, setSelectedRemoteSite ] );
 
 	const handleSaveAccount = useCallback(
 		async ( input: UpsertRemoteProviderAccountInput ) => {
@@ -266,10 +261,19 @@ export default function BridgeSiteSelector( {
 					/>
 				</VStack>
 				<VStack className="flex-1 min-w-0" alignment="top" spacing={ 3 }>
-					{ ( pullActivationMessage ||
-						( routeSupport && ! ( routeSupport.backupInventory && routeSupport.export ) ) ) && (
+					{ routeSupport && ! routeSupportAllowsPull && (
 						<Notice status="warning" isDismissible={ false }>
-							{ pullActivationMessage ?? copy.routeSupportWarning }
+							{ copy.routeSupportWarning }
+						</Notice>
+					) }
+					{ showCompatibilityWarning && copy.compatibilityWarning && (
+						<Notice status="warning" isDismissible={ false }>
+							{ copy.compatibilityWarning }
+						</Notice>
+					) }
+					{ selectedSiteWarning && (
+						<Notice status="warning" isDismissible={ false }>
+							{ selectedSiteWarning }
 						</Notice>
 					) }
 					{ sitesError && (

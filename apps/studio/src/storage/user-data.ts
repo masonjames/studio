@@ -77,6 +77,7 @@ function normalizeUserData( parsed: unknown ): UserData {
 		connectedRemoteSites,
 		connectedWpcomSites,
 		remoteProviderAccounts,
+		providerPullOperations,
 		...data
 	} = ( parsed ?? {} ) as LegacyUserData;
 
@@ -98,6 +99,10 @@ function normalizeUserData( parsed: unknown ): UserData {
 		connectedRemoteSites: canonicalConnectedSites,
 		connectedWpcomSites,
 		remoteProviderAccounts: Array.isArray( remoteProviderAccounts ) ? remoteProviderAccounts : [],
+		providerPullOperations:
+			typeof providerPullOperations === 'object' && providerPullOperations
+				? providerPullOperations
+				: {},
 	};
 }
 
