@@ -1,0 +1,50 @@
+name: Sync upstream trunk
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * *'
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: sync-upstream-trunk
+  cancel-in-progress: false
+
+jobs:
+  sync-upstream-trunk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate sync token
+        env:
+          UPSTREAM_SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+        run: |
+          if [ -z "$UPSTREAM_SYNC_TOKEN" ]; then
+            echo "::error title=Missing UPSTREAM_SYNC_TOKEN::Create a repository secret named UPSTREAM_SYNC_TOKEN containing a GitHub PAT with repo and workflow scope. The default GITHUB_TOKEN cannot mirror upstream commits that touch .github/workflows."
+            exit 1
+          fi
+
+      - name: Checkout fork
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream trunk
+        run: |
+          git remote add upstream https://github.com/Automattic/studio.git
+          git fetch upstream trunk --prune
+
+      - name: Update upstream-trunk mirror branch
+        run: |
+          git checkout -B upstream-trunk upstream/trunk
+          git push origin upstream-trunk --force-with-lease
